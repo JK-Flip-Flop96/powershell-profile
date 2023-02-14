@@ -51,7 +51,19 @@ try{
 }
 
 <# Environment Variables #>
-$env:POSH_GIT_ENABLED = $true
+
+# *** Posh-Git ***
+
+$ENV:POSH_GIT_ENABLED = $true
+
+# *** Fzf ***
+
+# Colours - Uses Catppuccin theme from https://github.com/catppuccin/fzf
+$ENV:FZF_DEFAULT_OPTS=@"
+--color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8
+--color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc
+--color=marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8
+"@
 
 <# Globals #>
 # Determine if the current user is elevated
@@ -370,82 +382,8 @@ Set-PSReadLineKeyHandler -Key "Alt+%" `
 
 <# Functions #>
 
-# ***PowerShell***
+# *** Terminal-Icons ***
 
-function Backup-PSProfile{
-
-    # If a profile already exists in the folder rename it for archival purposes
-    $profilesFolder = $($env:OneDriveConsumer + '\.config\PowerShell Profiles')
-    $profilePath = $($profilesFolder + '\Microsoft.Powershell_profile')
-    if(Test-Path -Path $($profilePath + '.ps1') -PathType Leaf){
-
-        # Get the last write time of the file
-        $lastModifiedDate = (Get-Item $($profilePath + '.ps1')).LastWriteTime
-        $dateString = $lastModifiedDate.toString("yyyyMMdd")
-
-        # If a file has already been archived with the same timestamp add the time as well
-        if(Test-Path -Path $($profilePath + '-' + $dateString + '.ps1') -PathType Leaf){
-            $dateString = $lastModifiedDate.toString("yyyyMMdd-HHmmss")
-        }
-
-        # Rename the file
-        Rename-Item -Path $($profilePath + '.ps1') -NewName $('Microsoft.Powershell_profile-' + $dateString + '.ps1')
-    }
-
-    # Copy the current profile
-    Copy-Item $profile -Destination $profilesFolder
-}
-
-# ***Termincal-Icons***
-
-# Keyboard Layout
-function Show-KeyboardLayout{ 
-    $lineChars = "─", "│", "┌", "┬", "┐", "├", "┼", "┤", "└", "┴", "┘"
-    $blockChars = "▄", "█", "▀"
-
-    $layout = '▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄',
-              '█ ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐ █',
-              '█ │ESC│ F1│ F2│ F3│ F4│ F5│ F6│ F7│ F8│ F9│F10│F11│F12│DEL│HOM│END│PUP│PDN│ ﯧ │ █',
-              '█ ├───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┴───┼───┼───┼───┼───┤ █',
-              '█ │ ` │ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ 8 │ 9 │ 0 │ - │ = │      │NUM│ / │ * │ - │ █',
-              '█ ├───┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─────┼───┼───┼───┼───┤ █',
-              '█ │    │ q │ w │ e │ r │ t │ y │ u │ i │ o │ p │ [ │ ] │     │ 7 │ 8 │ 9 │   │ █',
-              '█ ├─────┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┬──┴┐ ↵  ├───┼───┼───┤ + │ █',
-              "█ │ CAPS │ a │ s │ d │ f │ g │ h │ j │ k │ l │ ; │ ' │ # │    │ 4 │ 5 │ 6 │   │ █",
-              '█ ├────┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴─┬─┴───┴┬───┼───┼───┼───┼───┤ █',
-              '█ │  ⇧ │ \ │ z │ x │ c │ v │ b │ n │ m │ < │ > │ / │   ⇧  │  │ 1 │ 2 │ 3 │   │ █',
-              '█ ├────┼───┴┬──┴─┬─┴───┴───┴───┴───┴───┴──┬┴──┬┴──┬┴──┬───┼───┼───┼───┼───┤ ↵ │ █',
-              '█ │CTRL│ WIN│ ALT│                        │ALT│ FN│CTL│  │  │  │ 0 │ . │   │ █',
-              '█ └────┴────┴────┴────────────────────────┴───┴───┴───┴───┴───┴───┴───┴───┴───┘ █',
-              '▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀'
-
-    # Loop over the lines to be output
-    foreach($line in $layout){
-        # Loop over each character in the array
-        foreach($char in $line.ToCharArray()){
-            
-            # Convert the char to a string for comparison
-            $char = $char.ToString()
-
-            # Colour line, block and normal characters differently
-            if($lineChars.Contains($char)){
-                # Line Characters
-                Write-Host $char -ForegroundColor DarkGray -NoNewline
-            }elseif($blockChars.Contains($char)){
-                # Block Characters
-                Write-Host $char -ForegroundColor DarkRed -NoNewline
-            }else{
-                # Normal Charcters
-                Write-Host $char -ForegroundColor Gray -NoNewline
-            }
-        }
-        # Take a new line between each row of characters to be output
-        Write-Host ""
-    }
-}
-
-
-# Refresh my personal theme stored on OneDrive
 function Update-TerminalIconsTheme{
     # Use Add-[x]Theme functions with -force to update the existing themes
     Add-TerminalIconsColorTheme  $($env:OneDriveConsumer + '\.config\Terminal-Icons\colorThemes\personal-theme.psd1') -force
@@ -609,10 +547,3 @@ Register-ArgumentCompleter -Native -CommandName winget, wg -ScriptBlock {
 
 # Reset LASTEXITCODE so that no error code is displayed at the prompt on start up.
 $LASTEXITCODE = 0
-
-# fzF colours
-$ENV:FZF_DEFAULT_OPTS=@"
---color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8
---color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc
---color=marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8
-"@
