@@ -33,7 +33,7 @@ Import-Module 'C:\tools\vcpkg\scripts\posh-vcpkg'
 # *** Other Modules ***
 
 # NCR 
-Import-Module PSNCR
+Import-Module Posh-NCR
 
 <# External Programs #>
 
@@ -492,6 +492,8 @@ Set-Alias -Name cl -Value Clear-HostandExitCode # Shorter alias
 # New-Item
 Set-Alias -Name mk -Value New-Item # Similar to mkdir
 
+# *** External Programs ***
+
 # gsudo
 Set-Alias -Name sudo -Value gsudo
 Set-Alias -Name su -Value gsudo
@@ -502,6 +504,9 @@ Set-Alias -Name py32 -Value $($env:LOCALAPPDATA + "\Programs\Python\Python37-32\
 # Winget
 Set-Alias -Name wg -Value Winget # Shorter alias for cmd cli
 Set-Alias -Name wgu -Value Get-WinGetUpdates # List all updates available from WinGet
+
+# lazygit
+Set-Alias -Name lg -Value lazygit
 
 # *** Visual Studio ***
 
