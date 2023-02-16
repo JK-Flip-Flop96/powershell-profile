@@ -188,8 +188,8 @@ $PSReadLineOptions = @{
     # Display history search results and plugin suggestions together
     PredictionSource = "HistoryAndPlugin"
     
-    # Render the predictions in a drop down list
-    PredictionViewStyle = "ListView"
+    # Render the predictions in a drop down list - use inline view in VSCode
+    PredictionViewStyle = if ($env:TERM_PROGRAM -eq 'vscode') { "InlineView" } else { "ListView" }
 
     # Run a function whenever the vi mode is changed
     ViModeIndicator = "Script" 
