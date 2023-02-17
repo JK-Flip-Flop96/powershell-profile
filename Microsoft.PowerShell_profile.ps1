@@ -5,6 +5,11 @@
 # PSReadLine
 Import-Module PSReadLine
 
+# Load the CompletionPredictor module if PSVersion is 7.2 or higher
+if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 2) {
+    Import-Module -Name CompletionPredictor
+}
+
 # gsudo
 Import-Module "$env:USERPROFILE\scoop\apps\gsudo\current\gsudoModule.psd1"
 
@@ -290,9 +295,34 @@ function Invoke-FzfES{
     es $es_args | fzf --preview 'bat --style=numbers --color=always --line-range :500 {}' --prompt=' ES >'
 }
 
+function Invoke-FzfWingetUpdate{
+    # Get all updates available from WinGet and format them for fzf
+    $updates = Get-WinGetPackage | Where-Object {($_.Version -ne "Unknown") -and $_.IsUpdateAvailable} | Select-Object -Property Source, Name, Id, Version, AvailableVersions | ForEach-Object { 
+        # Format the output so that it can be used by fzf
+        $source = $_.Source
+        $name = $_.Name
+        $id = $_.Id
+        $version = $_.Version
+        $latest_version = $_.AvailableVersions[0]
+
+        "$source `t $name ($id) `t $version -> $latest_version"
+     }
+    
+    # Format the updates for fzf and pipe them to fzf
+    $package = $updates | Format-Table -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") } | fzf --preview 'winget show {}' --preview-window '50%,border-left' --prompt=' WinGet >'
+
+    # If the user didn't select anything return
+    if(-not $package){
+        return
+    }
+
+    Get-WinGetPackage $package | Update-WinGetPackage 
+}
+
 # List all updates available from WinGet
+# Filter out any packages that don't have a version number similar to how "winget upgrade" works
 function Get-WinGetUpdates {
-    Get-WinGetPackage | Where-Object IsUpdateAvailable
+    Get-WinGetPackage | Where-Object {($_.Version -ne "Unknown") -and $_.IsUpdateAvailable} | Select-Object -Property Name, Id, Version, @{Name="Latest Version";Expression={$_.AvailableVersions[0]}}
 }
 
 # Function to reset the Last exit code on a reset
