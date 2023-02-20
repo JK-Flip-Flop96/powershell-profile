@@ -295,28 +295,135 @@ function Invoke-FzfES{
     es $es_args | fzf --preview 'bat --style=numbers --color=always --line-range :500 {}' --prompt=' ES >'
 }
 
-function Invoke-FzfWingetUpdate{
+# Allow the user to select a winget package and update it
+function Invoke-FuzzyWingetUpdate{
     # Get all updates available from WinGet and format them for fzf
-    $updates = Get-WinGetPackage | Where-Object {($_.Version -ne "Unknown") -and $_.IsUpdateAvailable} | Select-Object -Property Source, Name, Id, Version, AvailableVersions | ForEach-Object { 
-        # Format the output so that it can be used by fzf
-        $source = $_.Source
-        $name = $_.Name
-        $id = $_.Id
-        $version = $_.Version
-        $latest_version = $_.AvailableVersions[0]
+    $updates = Get-WinGetPackage | Where-Object {($_.Version -ne "Unknown") -and $_.IsUpdateAvailable} | # Get all packages that have an update available and don't have an unknown version
+    Select-Object -Property Source, Name, Id, Version, AvailableVersions | # Select only the properties we need
+    ForEach-Object { # Format the output so that it can be used by fzf
+        $source = "$($PSStyle.Foreground.Magenta)$($_.Source)"
+        $name = "$($PSStyle.Foreground.White)$($_.Name)"
+        $id = "$($PSStyle.Foreground.Yellow)$($_.Id)$($PSStyle.Foreground.BrightWhite)" # Ensure the closing bracket is white
+        $version = "$($PSStyle.Foreground.Red)$($_.Version)"
+        $latest_version = "$($PSStyle.Foreground.Green)$($_.AvailableVersions[0])" # Get the latest version from the array - this is the first element
 
-        "$source `t $name ($id) `t $version -> $latest_version"
-     }
-    
+        # Output the formatted string - these strings are the ones that will be displayed in fzf
+        "$source `t $name ($id) `t $version $($PSStyle.Foreground.Cyan)-> $latest_version"
+    }
+
+    # If there are no updates available then exit
+    if($updates.Count -eq 0){
+        Write-Host "No updates found" -ForegroundColor Yellow
+        return
+    }
+
+    # Define the preview command for fzf to use - Better to define it here for readability
+    $fzfPreviewArgs = (
+        'echo {} | ' + # Pipe the selected line to the command
+        'pwsh -noLogo -noProfile -Command "' + # Preview command is run by cmd.exe so we need to start a new session
+        '$id = $input | Select-String -Pattern \"\((.*?)\)\" | ForEach-Object { $_.Matches.Groups[1].Value }; ' +  # Get the ID from the selected line
+        '$info = $(winget show $id) -replace \"^\s*Found\s*\", \"\"; ' + # Call the winget show command and remove the "Found" text from the output
+        '$info = $info -replace \"(^.*) \[(.*)\]$\", \"$($PSStyle.Bold)`$1 ($($PSStyle.Foreground.Yellow)`$2$($PSStyle.Foreground.BrightWhite))$($PSStyle.BoldOff)\"; ' + # Colour the ID and make the whole header bold
+        '$info -replace \"(^\S[a-zA-Z0-9 ]+:(?!/))\", \"$($PSStyle.Foreground.Cyan)`$1$($PSStyle.Foreground.White)\""' # Colour the keys, close the quotes and end the command
+    ) # Will print $info in the preview window
+
     # Format the updates for fzf and pipe them to fzf
-    $package = $updates | Format-Table -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") } | fzf --preview 'winget show {}' --preview-window '50%,border-left' --prompt=' WinGet >'
+    $package = $updates | Format-Table -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") } |
+        fzf --ansi --reverse --preview "$fzfPreviewArgs" --preview-window '50%,border-left' --prompt=' WinGet >'
 
     # If the user didn't select anything return
     if(-not $package){
         return
     }
 
-    Get-WinGetPackage $package | Update-WinGetPackage 
+    # Get the ID from the selected line
+    $id = $package | Select-String -Pattern "\((.*?)\)" | ForEach-Object { $_.Matches.Groups[1].Value } 
+
+    # If the ID is empty return
+    if(-not $id){
+        Write-Host "No ID found." -ForegroundColor Red # This should never happen
+        return
+    }
+
+    Write-Host "Updating $id..." # Print the ID to the console so the user knows what is happening
+
+    # Update the selected package
+    $result = Update-WinGetPackage "$id"
+
+    # Report the result to the user
+    if($result.status -eq "Ok"){
+        Write-Host "Successfully updated $id" -ForegroundColor Green
+    }else{
+        Write-Host "Failed to update $id" -ForegroundColor Red
+
+        # Output the full status if the update failed
+        $result | Format-List | Out-String | Write-Host
+    }
+}
+
+# Allow the user to select a winget package and install it
+function Invoke-FuzzyWingetUninstall{
+    # Get all packages from WinGet and format them for fzf
+    $installedPackages = Get-WinGetPackage | # Get all packages that don't have an unknown version
+    Select-Object -Property Source, Name, Id, Version | # Select only the properties we need
+    ForEach-Object { # Format the output so that it can be used by fzf
+        $source = "$($PSStyle.Foreground.Magenta)$($_.Source)"
+        $name = "$($PSStyle.Foreground.White)$($_.Name)"
+        $id = "$($PSStyle.Foreground.Yellow)$($_.Id)$($PSStyle.Foreground.BrightWhite)" # Ensure the closing bracket is white
+        $version = "$($PSStyle.Foreground.Green)$($_.Version)"
+
+        # Output the formatted string - these strings are the ones that will be displayed in fzf
+        "$source `t $name ($id) `t $version"
+    }
+
+    # If there are no packages then exit - This should never happen
+    if($installedPackages.Count -eq 0){
+        Write-Host "No packages found" -ForegroundColor Yellow
+        return
+    }
+
+    # Define the preview command for fzf to use - Better to define it here for readability
+    $fzfPreviewArgs = (
+        'echo {} | ' + # Pipe the selected line to the command
+        'pwsh -noLogo -noProfile -Command "' + # Preview command is run by cmd.exe so we need to start a new session
+        '$id = $input | Select-String -Pattern \"\((.*?)\)\" | ForEach-Object { $_.Matches.Groups[1].Value }; ' +  # Get the ID from the selected line
+        '$info = $(winget show $id) -replace \"^\s*Found\s*\", \"\"; ' + # Call the winget show command and remove the "Found" text from the output
+        '$info = $info -replace \"(^.*) \[(.*)\]$\", \"$($PSStyle.Bold)`$1 ($($PSStyle.Foreground.Yellow)`$2$($PSStyle.Foreground.BrightWhite))$($PSStyle.BoldOff)\"; ' + # Colour the ID and make the whole header bold
+        '$info -replace \"(^\S[a-zA-Z0-9 ]+:(?!/))\", \"$($PSStyle.Foreground.Cyan)`$1$($PSStyle.Foreground.White)\""' # Colour the keys, close the quotes and end the command
+    ) # Will print $info in the preview window
+
+    # Format the updates for fzf and pipe them to fzf
+    $package = $installedPackages | Out-String | ForEach-Object { $_.Trim("`r", "`n") } |
+        fzf --ansi --reverse --preview "$fzfPreviewArgs" --preview-window '50%,border-left' --prompt=' WinGet >'
+
+    # If the user didn't select anything return
+    if(-not $package){
+        return
+    }
+
+    # Get the ID from the selected line
+    $id = $package | Select-String -Pattern "\((.*?)\)" | ForEach-Object { $_.Matches.Groups[1].Value }
+
+    # If the ID is empty return
+    if(-not $id){
+        Write-Host "No ID found." -ForegroundColor Red # This should never happen
+        return
+    }
+
+    Write-Host "Uninstalling $id..." # Print the ID to the console so the user knows what is happening
+
+    # Uninstall the selected package
+    $result = Uninstall-WinGetPackage "$id"
+
+    # Report the result to the user
+    if($result.status -eq "Ok"){
+        Write-Host "Successfully uninstalled $id" -ForegroundColor Green
+    }else{
+        Write-Host "Failed to uninstall $id" -ForegroundColor Red
+
+        # Output the full status if the update failed
+        $result | Format-List | Out-String | Write-Host
+    }
 }
 
 # List all updates available from WinGet
