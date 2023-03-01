@@ -81,87 +81,84 @@ $ENV:FZF_DEFAULT_OPTS=@"
 # Determine if the current user is elevated
 $isAdmin =  ([Security.Principal.WindowsPrincipal] ([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
+# Prompt character, used in the prompt function. Defined as a global variable so that it can be changed outside of the prompt function
+$promptChar = "$($PSStyle.Foreground.Green)>"
+
 ################
 # Prompt Setup #
 ################
 
-try{
-    oh-my-posh --init --shell pwsh --config ~/jandedobbeleer.omp.json | Invoke-Expression
-    Set-PoshPrompt -Theme ys
-}catch{
-    # If oh-my-posh intialisation fails, reimplement the included "ys" theme in a prompt function as a stand-in
-    function prompt {
-        # Gather values that may be updated before they are checked
-        $currentExitCode = $global:LASTEXITCODE.ToString()
+function prompt {
+    # Gather values that may be updated before they are checked
+    $currentExitCode = $global:LASTEXITCODE.ToString()
 
-        # Take a new line
-        Write-Host ''
+    # Take a new line
+    Write-Host ''
 
-        # ***User*** 
-        if($isAdmin){
-            Write-Host '% ' -ForegroundColor Red -NoNewline
-        }else{
-            Write-Host '# ' -ForegroundColor Blue -NoNewline
-        }
-
-        # Username may be null, in this case derive the username from the name of the user's home folder (for WSL mainly)
-        if($null -eq $env:UserName){
-            Write-Host ($($env:Homepath | Split-Path -leaf) + ' ') -ForegroundColor Cyan -NoNewLine
-		}else{
-            Write-Host ($env:UserName + ' ') -ForegroundColor Cyan -NoNewline
-		}
-
-        # ***Host***
-        Write-Host ('@ ') -ForegroundColor DarkGray -NoNewline
-        Write-Host ($env:COMPUTERNAME + ' ') -ForegroundColor Green -NoNewline
-        
-        # ***Directory***
-        Write-Host ('in ') -ForegroundColor DarkGray -NoNewline
-        # Replace references to the home folder with a '~' and remove the 'Microsoft.PowerShell.Core\FileSystem::' prefix
-        Write-Host ($(Get-Location).ToString().replace(($env:HOMEDRIVE + $env:HOMEPATH), '~').replace("Microsoft.PowerShell.Core\FileSystem::", "") + ' ') -ForegroundColor Yellow -NoNewline
-        
-        # ***Git***
-        # If the current directory is a git repository, display the current branch
-        if($env:POSH_GIT_ENABLED -eq $true){ # Only run if posh-git is enabled
-            if($status = Get-GitStatus -Force){ # Only run if the current directory is a git repository
-                Write-Host ('on ') -ForegroundColor DarkGray -NoNewline # Prefix
-                Write-Host ('git:') -ForegroundColor White -NoNewline # Git Icon
-                Write-Host ($status.Branch) -ForegroundColor Cyan -NoNewline # Branch Name
-                
-                # Status Icon
-                if($status.HasWorking){
-                    Write-Host (' x ') -ForegroundColor Red -NoNewline # Red X if the working directory is dirty
-                }else {
-                    Write-Host (' o ') -ForegroundColor Green -NoNewline # Green O if the working directory is clean
-                }
-            }
-        }
-
-        # ***Timestamp***
-        Write-Host ('[' + (Get-Date -Format "HH:mm:ss") + '] ') -ForegroundColor DarkGray -NoNewline
-
-        # ***Exit Code***
-
-        # Don't display the exit code if it is 0 (Success)
-        if($currentExitCode -ne '0'){
-            Write-Host ('C:' + ($currentExitCode)) -ForegroundColor Red
-        }else{
-            Write-Host '' # Write a blank line to ensure the prompt is on a new line
-        }
-        
-        # ***Prompt***
-        # Write out the Prompt character seperately so that it can be colourised
-        Write-Host '$' -ForegroundColor Red -NoNewline
-
-        # Reset the exit code if it was updated by any of the above script
-        $global:LASTEXITCODE = $currentExitCode
-
-        # Return a space to act as a proxy prompt character
-        return ' '
+    # ***User*** 
+    if($isAdmin){
+        Write-Host '% ' -ForegroundColor Red -NoNewline
+    }else{
+        Write-Host '# ' -ForegroundColor Blue -NoNewline
     }
 
+    # Username may be null, in this case derive the username from the name of the user's home folder (for WSL mainly)
+    if($null -eq $env:UserName){
+        Write-Host ($($env:Homepath | Split-Path -leaf) + ' ') -ForegroundColor Cyan -NoNewLine
+    }else{
+        Write-Host ($env:UserName + ' ') -ForegroundColor Cyan -NoNewline
+    }
+
+    # ***Host***
+    Write-Host ('@ ') -ForegroundColor DarkGray -NoNewline
+    Write-Host ($env:COMPUTERNAME + ' ') -ForegroundColor Green -NoNewline
+    
+    # ***Directory***
+    Write-Host ('in ') -ForegroundColor DarkGray -NoNewline
+    # Replace references to the home folder with a '~' and remove the 'Microsoft.PowerShell.Core\FileSystem::' prefix
+    Write-Host ($(Get-Location).ToString().replace(($env:HOMEDRIVE + $env:HOMEPATH), '~').replace("Microsoft.PowerShell.Core\FileSystem::", "") + ' ') -ForegroundColor Yellow -NoNewline
+    
+    # ***Git***
+    # If the current directory is a git repository, display the current branch
+    if($env:POSH_GIT_ENABLED -eq $true){ # Only run if posh-git is enabled
+        if($status = Get-GitStatus -Force){ # Only run if the current directory is a git repository
+            Write-Host ('on ') -ForegroundColor DarkGray -NoNewline # Prefix
+            Write-Host ('git:') -ForegroundColor White -NoNewline # Git Icon
+            Write-Host ($status.Branch) -ForegroundColor Cyan -NoNewline # Branch Name
+            
+            # Status Icon
+            if($status.HasWorking){
+                Write-Host (' x ') -ForegroundColor Red -NoNewline # Red X if the working directory is dirty
+            }else {
+                Write-Host (' o ') -ForegroundColor Green -NoNewline # Green O if the working directory is clean
+            }
+        }
+    }
+
+    # ***Timestamp***
+    Write-Host ('[' + (Get-Date -Format "HH:mm:ss") + '] ') -ForegroundColor DarkGray -NoNewline
+
+    # ***Exit Code***
+
+    # Don't display the exit code if it is 0 (Success)
+    if($currentExitCode -ne '0'){
+        Write-Host ('C:' + ($currentExitCode)) -ForegroundColor Red
+    }else{
+        Write-Host '' # Write a blank line to ensure the prompt is on a new line
+    }
+    
+    # ***Prompt***
+    # Write the prompt character, taken from the global variable so that it can be changed in the vi mode change function
+    Write-Host $global:promptChar -ForegroundColor Red -NoNewline 
+
     # Tell PSReadLine what the prompt character is
-    Set-PSReadLineOption -PromptText '$ '
+    Set-PSReadLineOption -PromptText $global:promptChar
+
+    # Reset the exit code if it was updated by any of the above script
+    $global:LASTEXITCODE = $currentExitCode
+
+    # Return a space to act as a proxy prompt character
+    return ' '
 }
 
 <# PSReadLine #>
@@ -171,9 +168,22 @@ function OnViModeChange {
     if ($args[0] -eq 'Command') {
         # Set the cursor to a blinking block.
         Write-Host -NoNewLine "`e[1 q"
+
+        # Change the prompt character to a blue '<' in command mode
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", Justification="Global variable is accessed from a different scope")]
+        $global:promptChar = "$($PSStyle.Foreground.Blue)<"
+
+        # Redraw the prompt so that the new prompt character is displayed
+        [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
     } else {
         # Set the cursor to a blinking line.
         Write-Host -NoNewLine "`e[5 q"
+
+        # Change the prompt character to a green '>' in insert mode
+        $global:promptChar = "$($PSStyle.Foreground.Green)>"
+
+        # Redraw the prompt so that the new prompt character is displayed
+        [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
     }
 }
 
@@ -184,8 +194,8 @@ $PSReadLineOptions = @{
 
     # Set colours
     Colors = @{
-        # Colour the continuation prompt red to match ys's red prompt
-        ContinuationPrompt = "Red"
+        # Colour the continuation prompt cyan to keep it similar to yet distinct from both the command prompt and insert prompt
+        ContinuationPrompt = "Cyan"
     }
 
     # Define string used as the continuation prompt
@@ -193,6 +203,9 @@ $PSReadLineOptions = @{
 
     # Use vi-like command line editting
     EditMode = "Vi"
+
+    # Prompt Spans multiple lines. Currently blank line -> status line -> prompt line
+    ExtraPromptLineCount = 2
 
     # Don't display duplicates in the history search
     HistoryNoDuplicates = $true
@@ -386,10 +399,10 @@ Set-Alias -Name fzfp -Value Invoke-FzfBat # fuzzy bat preview
 Set-Alias -Name fzft -Value Invoke-FzfTldr # fuzzy tldr
 Set-Alias -Name fzfe -Value Invoke-FzfES # fuzzy es
 
-# FZF-WinGet Integration
-Set-Alias -Name fwgi -Value Invoke-FzfWinGetInstall # fuzzy winget install
-Set-Alias -Name fwgr -Value Invoke-FzfWinGetUninstall # fuzzy winget remove
-Set-Alias -Name fwgu -Value Invoke-FzfWinGetUpdate # fuzzy winget update
+# Fuzzy package manager aliases
+Set-Alias -Name fpi -Value Invoke-FuzzyPackageInstall # fuzzy package install
+Set-Alias -Name fpr -Value Invoke-FuzzyPackageUninstall # fuzzy package uninstall (remove)
+Set-Alias -Name fpu -Value Invoke-FuzzyPackageUpdate # fuzzy package update
 
 <# Argument Compeleters #>
 
