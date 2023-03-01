@@ -164,25 +164,18 @@ function prompt {
 <# PSReadLine #>
 
 # Function to run every time the vi mode is changed
+# Changes the prompt character and cursor style
+# Green '>' for insert mode, blue '<' for command mode - both distinct from the red error prompt character
+# Blinking block for insert mode, blinking line for command mode
 function OnViModeChange {
-    if ($args[0] -eq 'Command') {
-        # Set the cursor to a blinking block.
+    if ($args[0] -eq 'Command') { # Command mode
         Write-Host -NoNewLine "`e[1 q"
-
-        # Change the prompt character to a blue '<' in command mode
         [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", Justification="Global variable is accessed from a different scope")]
         $global:promptChar = "$($PSStyle.Foreground.Blue)<"
-
-        # Redraw the prompt so that the new prompt character is displayed
         [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
-    } else {
-        # Set the cursor to a blinking line.
+    } else { # Insert mode
         Write-Host -NoNewLine "`e[5 q"
-
-        # Change the prompt character to a green '>' in insert mode
         $global:promptChar = "$($PSStyle.Foreground.Green)>"
-
-        # Redraw the prompt so that the new prompt character is displayed
         [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
     }
 }
