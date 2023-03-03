@@ -81,8 +81,18 @@ $ENV:FZF_DEFAULT_OPTS=@"
 # Determine if the current user is elevated
 $isAdmin =  ([Security.Principal.WindowsPrincipal] ([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-# Prompt character, used in the prompt function. Defined as a global variable so that it can be changed outside of the prompt function
-$promptChar = "$($PSStyle.Foreground.Green)>"
+# --- Prompt Globals --- #
+# Each of the following variables are declared as global so that they can be modified outside of the prompt function
+# Mainly used to cache values so that the prompt is not recalculated every time it is redrawn on a Vi mode change
+
+# Vi Mode, false = insert mode, true = command mode
+$viCommandMode = $false  # Default to insert mode
+
+# Git status
+$lastGitStatus = $null
+
+# Used to determine if the prompt is being redrawn
+$isRedraw = $false
 
 ################
 # Prompt Setup #
@@ -120,19 +130,34 @@ function prompt {
     
     # ***Git***
     # If the current directory is a git repository, display the current branch
-    if($env:POSH_GIT_ENABLED -eq $true){ # Only run if posh-git is enabled
-        if($status = Get-GitStatus -Force){ # Only run if the current directory is a git repository
-            Write-Host ('on ') -ForegroundColor DarkGray -NoNewline # Prefix
-            Write-Host ('git:') -ForegroundColor White -NoNewline # Git Icon
-            Write-Host ($status.Branch) -ForegroundColor Cyan -NoNewline # Branch Name
-            
-            # Status Icon
-            if($status.HasWorking){
-                Write-Host (' x ') -ForegroundColor Red -NoNewline # Red X if the working directory is dirty
-            }else {
-                Write-Host (' o ') -ForegroundColor Green -NoNewline # Green O if the working directory is clean
+    if(-not $global:isRedraw){ # Only run if the prompt is not being redrawn
+        if($env:POSH_GIT_ENABLED -eq $true){ # Only run if posh-git is enabled
+            if($status = Get-GitStatus -Force){ # Only run if the current directory is a git repository
+
+                # Branch Name
+                $gitStatus = "$($PSStyle.Foreground.BrightBlack)on $($PSStyle.Foreground.White)git:$($PSStyle.Foreground.Cyan)$($status.Branch)"
+                
+                # Status Icon
+                if($status.HasWorking){
+                    $gitStatus += "$($PSStyle.Foreground.Red) x " # Working directory has changes, display a red 'x'
+                }else {
+                    $gitStatus += "$($PSStyle.Foreground.Green) o " # Working directory is clean, display a green 'o'
+                }
+
+                Write-Host $gitStatus -NoNewline # Write the git status to the prompt
+
+                $global:lastGitStatus = $gitStatus # Cache the git status
+            }else{
+                $global:lastGitStatus = $null # If the current directory is not a git repository, set the last git status to null
             }
+        }else{
+            $global:lastGitStatus = $null # If posh-git is not enabled, set the last git status to null
         }
+    }else{
+        # If the prompt is being redrawn, write the last git status cached in the global variable for speed
+        if($global:lastGitStatus){ # If the last git status was not null, write it
+            Write-Host $global:lastGitStatus -NoNewline
+        } # If the last git status was null, do nothing
     }
 
     # ***Timestamp***
@@ -148,14 +173,25 @@ function prompt {
     }
     
     # ***Prompt***
-    # Write the prompt character, taken from the global variable so that it can be changed in the vi mode change function
-    Write-Host $global:promptChar -ForegroundColor Red -NoNewline 
+    # Write the prompt character, change the character, colour and cursor depending on the vi mode
+
+    if ($global:viCommandMode) {
+        $promptChar = "<"
+        $promptColor = "Blue"
+    } else {
+        $promptChar = ">"
+        $promptColor = "Green"
+    }
+    Write-Host $promptChar -NoNewline -ForegroundColor $promptColor
 
     # Tell PSReadLine what the prompt character is
-    Set-PSReadLineOption -PromptText $global:promptChar
+    Set-PSReadLineOption -PromptText "$promptChar " 
 
     # Reset the exit code if it was updated by any of the above script
     $global:LASTEXITCODE = $currentExitCode
+
+    # Reset the redraw flag
+    $global:isRedraw = $false
 
     # Return a space to act as a proxy prompt character
     return ' '
@@ -168,16 +204,26 @@ function prompt {
 # Green '>' for insert mode, blue '<' for command mode - both distinct from the red error prompt character
 # Blinking block for insert mode, blinking line for command mode
 function OnViModeChange {
-    if ($args[0] -eq 'Command') { # Command mode
-        Write-Host -NoNewLine "`e[1 q"
-        [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", Justification="Global variable is accessed from a different scope")]
-        $global:promptChar = "$($PSStyle.Foreground.Blue)<"
-        [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
-    } else { # Insert mode
-        Write-Host -NoNewLine "`e[5 q"
-        $global:promptChar = "$($PSStyle.Foreground.Green)>"
-        [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
+    # Suppress the PSUseDeclaredVarsMoreThanAssignments warning as the global variable are used in prompt function
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", Justification="Global variable is accessed from a different scope", Scope="Function")]
+    param(
+        [string]$Mode
+    )
+
+    # Set the redraw flag so that the prompt is redrawn with the git status taken from the global variable
+    $global:isRedraw = $true
+
+    # Set the global vi mode variable to the current mode
+    $global:viCommandMode = $Mode -eq 'Command' # Set the global vi mode variable to the current mode
+
+    if ($global:viCommandMode) {
+        Write-Host "`e[1 q"
+    } else {
+        Write-Host "`e[5 q"
     }
+
+    # Redraw the prompt
+    [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
 }
 
 # PSReadLine Options
@@ -197,7 +243,8 @@ $PSReadLineOptions = @{
     # Use vi-like command line editting
     EditMode = "Vi"
 
-    # Prompt Spans multiple lines. Currently blank line -> status line -> prompt line
+    # Prompt Spans multiple lines, required because InvokePrompt is used in OnViModeChange to modify the prompt
+    # Currently blank line -> status line -> prompt line
     ExtraPromptLineCount = 2
 
     # Don't display duplicates in the history search
@@ -211,6 +258,8 @@ $PSReadLineOptions = @{
     
     # Render the predictions in a drop down list - use inline view in VSCode
     PredictionViewStyle = if ($env:TERM_PROGRAM -eq 'vscode') { "InlineView" } else { "ListView" }
+
+    PromptText = "> "
 
     # Run a function whenever the vi mode is changed
     ViModeIndicator = "Script" 
