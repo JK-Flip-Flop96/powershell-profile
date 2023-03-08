@@ -18,7 +18,14 @@ Import-Module "$env:USERPROFILE\scoop\apps\gsudo\current\gsudoModule.psd1"
 # *** Style Modules ***
 
 # Posh-Git
-Import-Module -Name posh-git
+try{
+    Import-Module -Name posh-git
+
+    $env:POSH_GIT_ENABLED = $true # Used to determine if posh-git is loaded
+}catch{
+    $env:POSH_GIT_ENABLED = $false
+}
+
 
 # Terminal-Icons
 Import-Module -Name Terminal-Icons
@@ -64,10 +71,6 @@ try{
 
 <# Environment Variables #>
 
-# *** Posh-Git ***
-
-$ENV:POSH_GIT_ENABLED = $true
-
 # *** Fzf ***
 
 # Colours - Uses Catppuccin theme from https://github.com/catppuccin/fzf
@@ -79,119 +82,195 @@ $ENV:FZF_DEFAULT_OPTS=@"
 
 <# Globals #>
 # Determine if the current user is elevated
-$isAdmin =  ([Security.Principal.WindowsPrincipal] ([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$IsAdminSession =  ([Security.Principal.WindowsPrincipal] ([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 # --- Prompt Globals --- #
 # Each of the following variables are declared as global so that they can be modified outside of the prompt function
 # Mainly used to cache values so that the prompt is not recalculated every time it is redrawn on a Vi mode change
 
 # Vi Mode, false = insert mode, true = command mode
-$viCommandMode = $false  # Default to insert mode
+$ViCommandMode = $false  # Default to insert mode
 
-# Git status
-$lastGitStatus = $null
+# - Cached Values -
+# Cached version of the first two lines of the prompt, used to redraw the prompt when the vi mode is changed
+$CurrentPrompt = $null
 
-# Used to determine if the prompt is being redrawn
-$isRedraw = $false
+# Width is checked to see if the window has been resized, if it has the prompt is recalculated
+$LastHostWidth = $Host.UI.RawUI.WindowSize.Width 
+
+# - Flags - 
+# Set by OnViModeChange to prevent the prompt from being recalculated when the vi mode is changed
+$IsPromptRedraw = $false
+
+# --- Colour Globals --- #
+
+# Catppuccin's Mocha theme
+# URL: https://github.com/catppuccin/catppuccin
+# Usage: $PSStyle.[Foreground/Background].FromRgb($CatppuccinMocha[<ColourName>])
+$CatppuccinMocha = [ordered]@{
+    # Colour Palette - 14 colours
+    Rosewater = 0xf5e0dc
+    Flamingo =  0xf2cdcd
+    Pink =      0xf5c2e7
+    Mauve =     0xcba6f7
+    Red =       0xf38ba8
+    Maroon =    0xeba0ac
+    Peach =     0xfab387
+    Yellow =    0xf9e2af
+    Green =     0xa6e3a1
+    Teal =      0x94e2d5
+    Sky =       0x89dceb
+    Sapphire =  0x74c7ec
+    Blue =      0x89b4fa
+    Lavender =  0xb4bef4
+
+    # Grayscale Palette - 12 colours
+    Text =      0xcdd6f4
+    Subtext1 =  0xbac2de
+    Subtext0 =  0xa6adc8
+    Overlay2 =  0x9399b2
+    Overlay1 =  0x7f849c
+    Overlay0 =  0x6c7086
+    Surface2 =  0x585b70
+    Surface1 =  0x45475a
+    Surface0 =  0x313244
+    Base =      0x1e1e2e
+    Mantle =    0x181825
+    Crust =     0x11111b
+}
 
 ################
 # Prompt Setup #
 ################
 
 function prompt {
-    # Gather values that may be updated before they are checked
-    $currentExitCode = $global:LASTEXITCODE.ToString()
+    <# Heavily inspired by the 'ys' theme included with Oh-My-Zsh
 
-    # Take a new line
-    Write-Host ''
+    Instead of ys's $ prompt, I use a > for the prompt in vi insert mode and a < for the prompt in vi command mode
 
-    # ***User*** 
-    if($isAdmin){
-        Write-Host '% ' -ForegroundColor Red -NoNewline
-    }else{
-        Write-Host '# ' -ForegroundColor Blue -NoNewline
+    Current Format:
+    [NewLine]
+    [Privelege] [User] @ [Host] in [Directory] [on [GitBranch] [GitStatus]] [Time] [ExitCode] [NewLine]
+    [Vi Mode/Prompt] #>
+
+    # Check if the window has been resized
+    if ($global:LastHostWidth -ne $Host.UI.RawUI.WindowSize.Width) {
+        $global:LastHostWidth = $Host.UI.RawUI.WindowSize.Width
+        $global:CurrentPrompt = $null # Force a recalculation of the prompt
     }
 
-    # Username may be null, in this case derive the username from the name of the user's home folder (for WSL mainly)
-    if($null -eq $env:UserName){
-        Write-Host ($($env:Homepath | Split-Path -leaf) + ' ') -ForegroundColor Cyan -NoNewLine
-    }else{
-        Write-Host ($env:UserName + ' ') -ForegroundColor Cyan -NoNewline
-    }
+    # Only recalculate the prompt if it is not a redraw
+    if ((-not $global:IsPromptRedraw) -or ($null -eq $global:CurrentPrompt)) {
+        
+        # --- Pre-Prompt ---
+        # Gather values that may be updated before they are checked
 
-    # ***Host***
-    Write-Host ('@ ') -ForegroundColor DarkGray -NoNewline
-    Write-Host ($env:COMPUTERNAME + ' ') -ForegroundColor Green -NoNewline
-    
-    # ***Directory***
-    Write-Host ('in ') -ForegroundColor DarkGray -NoNewline
-    # Replace references to the home folder with a '~' and remove the 'Microsoft.PowerShell.Core\FileSystem::' prefix
-    Write-Host ($(Get-Location).ToString().replace(($env:HOMEDRIVE + $env:HOMEPATH), '~').replace("Microsoft.PowerShell.Core\FileSystem::", "") + ' ') -ForegroundColor Yellow -NoNewline
-    
-    # ***Git***
-    # If the current directory is a git repository, display the current branch
-    if(-not $global:isRedraw){ # Only run if the prompt is not being redrawn
-        if($env:POSH_GIT_ENABLED -eq $true){ # Only run if posh-git is enabled
-            if($status = Get-GitStatus -Force){ # Only run if the current directory is a git repository
+        # Not sure why the exit code is sometimes null, but this fixes it
+        $CurrentExitCode = if ($null -eq $global:LASTEXITCODE) { 0 } else { $global:LASTEXITCODE }
 
-                # Branch Name
-                $gitStatus = "$($PSStyle.Foreground.BrightBlack)on $($PSStyle.Foreground.White)git:$($PSStyle.Foreground.Cyan)$($status.Branch)"
-                
-                # Status Icon
-                if($status.HasWorking){
-                    $gitStatus += "$($PSStyle.Foreground.Red) x " # Working directory has changes, display a red 'x'
-                }else {
-                    $gitStatus += "$($PSStyle.Foreground.Green) o " # Working directory is clean, display a green 'o'
-                }
+        # --- Start Prompt ---
 
-                Write-Host $gitStatus -NoNewline # Write the git status to the prompt
+        # Start the prompt with a blank line
+        $LeftStatus = "`n"
 
-                $global:lastGitStatus = $gitStatus # Cache the git status
-            }else{
-                $global:lastGitStatus = $null # If the current directory is not a git repository, set the last git status to null
-            }
-        }else{
-            $global:lastGitStatus = $null # If posh-git is not enabled, set the last git status to null
+        # --- Status Line ---
+
+        # ***User***
+        # If the user is an admin, prefix the username with a red "#",otherwise prefix with a blue "$"
+        # IsAdminSession is a global variable set in the prompt setup
+        $LeftStatus += if ($IsAdminSession) { "$($PSStyle.Foreground.Red)% " } else { "$($PSStyle.Foreground.Blue)# " }
+
+        # Username may be null, in this case derive the username from the name of the user's home folder (for WSL mainly)
+        if($null -eq $env:UserName){
+            $LeftStatus += "$($PSStyle.Foreground.Cyan)$($($env:Homepath | Split-Path -leaf)) "
+        } else {
+            $LeftStatus += "$($PSStyle.Foreground.Cyan)$($env:UserName) "
         }
-    }else{
-        # If the prompt is being redrawn, write the last git status cached in the global variable for speed
-        if($global:lastGitStatus){ # If the last git status was not null, write it
-            Write-Host $global:lastGitStatus -NoNewline
-        } # If the last git status was null, do nothing
+
+        # ***Host***
+        $LeftStatus += "$($PSStyle.Foreground.BrightBlack)@ $($PSStyle.Foreground.Green)$($env:COMPUTERNAME) "
+        
+        # ***Directory***
+        $LeftStatus += "$($PSStyle.Foreground.BrightBlack)in $($PSStyle.Foreground.Yellow)$($(Get-Location).ToString().replace($env:HOMEDRIVE + $env:HOMEPATH, '~').replace('Microsoft.PowerShell.Core\FileSystem::', '')) "
+        
+        # ***Git***
+        # If the current directory is a git repository, display the current branch
+        if(($env:POSH_GIT_ENABLED -eq $true) -and ($status = Get-GitStatus -Force)){
+            # Branch Name
+            $LeftStatus += "$($PSStyle.Foreground.BrightBlack)on $($PSStyle.Foreground.White)git:$($PSStyle.Foreground.Cyan)$($status.Branch)"
+            
+            # Branch Status - Dirty (x) or Clean (o)
+            $LeftStatus += if ($status.HasWorking) { "$($PSStyle.Foreground.Red) x " } else { "$($PSStyle.Foreground.Green) o " }
+        }
+
+        # ***Timestamp***
+        # Use the cached timestamp to prevent the time from moving forward  
+        $LeftStatus += "$($PSStyle.Foreground.BrightBlack)[$(Get-Date -Format "HH:mm:ss")] "
+
+        # ***Nesting***
+        # If the prompt is nested, display the nesting level
+        if($nestedPromptLevel -gt 0){ # Don't display the nesting level if it is 0
+            $LeftStatus += "$($PSStyle.Foreground.BrightWhite)L:$($PSStyle.Foreground.Yellow)$NestedPromptLevel "
+        }
+
+        # ys has a counter for the number of commands run here, but I don't see the point of it
+
+        # ***Exit Code***
+        if($CurrentExitCode -ne 0){ # Don't display the exit code if it is 0 (Success)
+            $LeftStatus += "$($PSStyle.Foreground.BrightWhite)C:$($PSStyle.Foreground.Red)$CurrentExitCode "
+        }
+
+        # --- Right Align ---
+
+        $RightStatus = ""
+
+        # ***Duration***
+        # Display the duration of the last command
+        $LastCommandTime = Get-LastCommandDuration -MinimumSeconds 5
+
+        if ($LastCommandTime -gt 0) {
+            $RightStatus += "$($PSStyle.Foreground.BrightBlack)took $($PSStyle.Foreground.Magenta)$($LastCommandTime)"
+        }
+
+        # *** Padding ***
+        # Pad the right side of the prompt right element appear on the right edge of the window
+        # To determine the correct amount of padding we need to strip the escape sequences from the prompt
+        $Padding = (" " * ($Host.UI.RawUI.WindowSize.Width - (($LeftStatus -replace "\x1b\[[0-9;]*m", "").Length + ($RightStatus -replace "\x1b\[[0-9;]*m", "").Length)))
+
+
+        # --- End of Status Line ---
+
+        # Cache the prompt
+        $global:CurrentPrompt = $LeftStatus + $Padding + $RightStatus
     }
 
-    # ***Timestamp***
-    Write-Host ('[' + (Get-Date -Format "HH:mm:ss") + '] ') -ForegroundColor DarkGray -NoNewline
+    # Write the cached prompt, will contain the recalculated prompt if it is not a redraw
+    Write-Host -Object $global:CurrentPrompt
 
-    # ***Exit Code***
+    # --- Prompt Line ---
+    # This section is run every time the prompt is redrawn
 
-    # Don't display the exit code if it is 0 (Success)
-    if($currentExitCode -ne '0'){
-        Write-Host ('C:' + ($currentExitCode)) -ForegroundColor Red
-    }else{
-        Write-Host '' # Write a blank line to ensure the prompt is on a new line
-    }
-    
     # ***Prompt***
-    # Write the prompt character, change the character, colour and cursor depending on the vi mode
-
-    if ($global:viCommandMode) {
-        $promptChar = "<"
-        $promptColor = "Blue"
+    # Determine the prompt character and colour based on the vi mode
+    if ($global:ViCommandMode) {
+        $PromptChar = "<"
+        $PromptColor = "Blue"
     } else {
-        $promptChar = ">"
-        $promptColor = "Green"
+        $PromptChar = ">"
+        $PromptColor = "Green"
     }
-    Write-Host $promptChar -NoNewline -ForegroundColor $promptColor
+
+    # Write the prompt character
+    Write-Host -Object $PromptChar -NoNewline -ForegroundColor $PromptColor
 
     # Tell PSReadLine what the prompt character is
-    Set-PSReadLineOption -PromptText "$promptChar " 
+    Set-PSReadLineOption -PromptText "$PromptChar " 
 
     # Reset the exit code if it was updated by any of the above script
-    $global:LASTEXITCODE = $currentExitCode
+    $global:LASTEXITCODE = $CurrentExitCode
 
     # Reset the redraw flag
-    $global:isRedraw = $false
+    $global:IsPromptRedraw = $false
 
     # Return a space to act as a proxy prompt character
     return ' '
@@ -200,27 +279,24 @@ function prompt {
 <# PSReadLine #>
 
 # Function to run every time the vi mode is changed
-# Changes the prompt character and cursor style
-# Green '>' for insert mode, blue '<' for command mode - both distinct from the red error prompt character
-# Blinking block for insert mode, blinking line for command mode
+# Prompt: Green '>' for insert mode, blue '<' for command mode - both distinct from the red error prompt character
+# Cursor: Blinking block for insert mode, blinking line for command mode
 function OnViModeChange {
-    # Suppress the PSUseDeclaredVarsMoreThanAssignments warning as the global variable are used in prompt function
+    # Suppress the warning as the global variables updated below are basically parameters for the prompt function
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", Justification="Global variable is accessed from a different scope", Scope="Function")]
     param(
+        [Parameter(ValueFromRemainingArguments=$true)]
         [string]$Mode
     )
 
-    # Set the redraw flag so that the prompt is redrawn with the git status taken from the global variable
-    $global:isRedraw = $true
+    # Set the redraw flag so that the prompt isn't recalculated
+    $global:IsPromptRedraw = $true
 
     # Set the global vi mode variable to the current mode
-    $global:viCommandMode = $Mode -eq 'Command' # Set the global vi mode variable to the current mode
+    $global:ViCommandMode = $Mode -eq 'Command' 
 
-    if ($global:viCommandMode) {
-        Write-Host "`e[1 q"
-    } else {
-        Write-Host "`e[5 q"
-    }
+    # Change the cursor style
+    Write-Host $(if ($global:ViCommandMode) { "`e[1 q" } else { "`e[5 q" })
 
     # Redraw the prompt
     [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
@@ -274,6 +350,19 @@ Set-PSReadLineOption @PSReadLineOptions
 # Import the script that defines the key bindings
 . "$PSScriptRoot\Bindings\PSReadLine.ps1"
 
+<# PSStyle Options #>
+
+# Set the PSStyle options if PSStyle is available, i.e. if the PSVersion is 7.2 or greater
+if ($PSVersionTable.PSVersion.Major -gt 7 -or ($PSVersionTable.PSVersion.Major -eq 7 -and $PSVersionTable.PSVersion.Minor -ge 2)){
+
+    # If the terminal supports OSC indicators, use the OSC progress bar - I only know of Windows Terminal supporting this
+    if ($env:WT_SESSION) {
+        $PSStyle.Progress.UseOSCIndicator = $true
+    }
+
+    $PSStyle.Formatting.TableHeader = "`e[33;3m" # Yellow Italics
+}
+
 #############
 # Functions #
 #############
@@ -324,20 +413,64 @@ function Add-NewTerminalIcon{
 
 # ***Alias Functions***
 
-# Function for the ls alias so that it functions more Unix-like
-function Get-ChildItemUnixStyle {
-    # If any argument are passed to the alias bypass the filtering so that Get-ChildItem functions as normal
-    if($args.Count -gt 0){
-        & Get-ChildItem @args
-    }else{
-        # Exclude files hidden in a unix shell session, Also hide the dummy files created by Carbon Black
-        Get-ChildItem . -Exclude '.*', '#*', '$*'
-    }
+# TODO: Change the below functions to allow pass through of parameters to Get-ChildItem
+# But I'm not doing it now because I can't fucking figure this shit out
+
+# Make ll more like unix ls -l
+function Get-ChildItemUnixStyleLong {
+    Get-ChildItem -Exclude '_*', '.*', '#*', '$*' | Sort-Object { $_.GetType() }, Name | Format-Table -AutoSize
+}
+
+# Make ls more like unix ls
+function Get-ChildItemUnixStyleShort {
+    Get-ChildItem -Exclude '_*', '.*', '#*', '$*' | Sort-Object { $_.GetType() }, Name | Format-Wide -AutoSize
 }
 
 # Function for listing all the functions
 function Get-ChildItemFunctions {
     Get-ChildItem Functions:\
+}
+
+# Function for listing all the aliases
+function Get-ChildItemAliases {
+    Get-ChildItem Alias:\
+}
+
+function Get-LastCommandDuration {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [switch]$IncludeMilliseconds = $false,
+
+        [Parameter()]
+        [int]$MinimumSeconds = 0
+    )
+
+    # Get the previously executed command
+    $LastCommand = Get-History -Count 1
+
+    # Don't do anything if the last command is null i.e on Shell startup
+    if ($null -ne $LastCommand) {
+        # Get the duration of the last command
+        $Duration = $LastCommand.EndExecutionTime - $LastCommand.StartExecutionTime
+        
+        # Don't do anything if the duration is less than the minimum seconds
+        if ($Duration.TotalSeconds -lt $MinimumSeconds) { return "" }
+
+        # Initialise the duration text
+        $DurationText = ""
+
+        # Format the time in the format: 1d 2h 3m 4s [5ms]
+        # Where the parts are only included if they are greater than 0
+        if ($Duration.Days -gt 0) { $DurationText += "{0:N0}d" -f $Duration.Days }
+        if ($Duration.Hours -gt 0) { $DurationText += "{0:N0}h " -f $Duration.Hours }
+        if ($Duration.Minutes -gt 0) { $DurationText += "{0:N0}m " -f $Duration.Minutes }
+        if ($Duration.Seconds -gt 0) { $DurationText += "{0:N0}s " -f $Duration.Seconds }
+        if ($IncludeMilliseconds -and $Duration.Milliseconds -gt 0) { $DurationText += "{0:N0}ms" -f $Duration.Milliseconds }
+
+        # Return the formatted time, trimming any trailing space
+        return $DurationText.TrimEnd()
+    }
 }
 
 function Invoke-FzfBat{
@@ -373,9 +506,9 @@ function Get-WinGetUpdates {
     Get-WinGetPackage | Where-Object {($_.Version -ne "Unknown") -and $_.IsUpdateAvailable} | Select-Object -Property Name, Id, Version, @{Name="Latest Version";Expression={$_.AvailableVersions[0]}}
 }
 
-# Function to reset the Last exit code on a reset
+# Function to reset the Last exit code on a clear screen
 function Clear-HostandExitCode {
-    $LASTEXITCODE = 0
+    $global:LASTEXITCODE = 0
     Clear-Host
 }
 
@@ -389,6 +522,14 @@ function Edit-ProfileFolder {
     code $PSScriptRoot
 }
 
+# Print blocks showing all of the colours in the Catppuccin Mocha theme
+# I guess this could be used to test true colour support?
+function Write-CatppuccinBlocks {
+    foreach($Colour in $CatppuccinMocha.GetEnumerator()){
+        Write-Host "$($PSStyle.Foreground.FromRgb($Colour.Value))███" -NoNewline
+    }
+}
+
 ###########
 # Aliases #
 ###########
@@ -396,9 +537,12 @@ function Edit-ProfileFolder {
 # *** Built in ***
 
 # Get-ChildItem
-Set-Alias -Name ls -Value Get-ChildItemUnixStyle # TODO: make this show less details - more like ls in bash
-Set-Alias -Name ll -Value Get-ChildItemUnixStyle # Should be similar to ls -l
+Set-Alias -Name ls -Value Get-ChildItemUnixStyleShort # TODO: make this show less details - more like ls in bash
+Set-Alias -Name ll -Value Get-ChildItemUnixStyleLong # Should be similar to ls -l
+
+# Get-ChilItem for non-filesystem items
 Set-Alias -Name lf -Value Get-ChildItemFunctions # List all functions
+Set-Alias -Name la -Value Get-ChildItemAliases # List all aliases
 
 # Clear-Host
 Set-Alias -Name clear -Value Clear-HostandExitCode # Reset the exit code on clear
@@ -411,8 +555,8 @@ Set-Alias -Name mk -Value New-Item # Similar to mkdir
 # *** External Programs ***
 
 # gsudo
-Set-Alias -Name sudo -Value gsudo
-Set-Alias -Name su -Value gsudo
+Set-Alias -Name sudo -Value gsudo # I'd rather use sudo than gsudo
+Set-Alias -Name su -Value gsudo # Shorter alias
 
 # Python - 32 bit for test scripts
 Set-Alias -Name py32 -Value $($env:LOCALAPPDATA + "\Programs\Python\Python37-32\python.exe")

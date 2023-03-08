@@ -1,5 +1,8 @@
 # PSReadLine Key Bindings
 
+# --- Stolen Examples ---
+# From: https://github.com/PowerShell/PSReadLine/blob/master/PSReadLine/SamplePSReadLineProfile.ps1
+
 # Save the current contents of the prompt to history without executing it
 Set-PSReadLineKeyHandler -Key Alt+w `
                          -BriefDescription SaveInHistory `
@@ -175,4 +178,20 @@ Set-PSReadLineKeyHandler -Key "Alt+%" `
             }
         }
     }
+}
+
+# --- My Stuff ---
+
+# Refresh the prompt when you press Alt+r
+Set-PSReadLineKeyHandler -Key "Alt+r" `
+                         -BriefDescription RefreshPrompt `
+                         -LongDescription "Refresh the entire prompt" `
+                         -ScriptBlock {
+    param($key, $arg)
+
+    # Set the redraw flag so that the prompt isn't recalculated
+    $global:IsPromptRedraw = $true
+
+    # Redraw the prompt
+    [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
 }
