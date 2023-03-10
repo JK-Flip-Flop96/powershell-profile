@@ -182,14 +182,14 @@ Set-PSReadLineKeyHandler -Key "Alt+%" `
 
 # --- My Stuff ---
 
-# Refresh the prompt when you press Alt+r
+# Refresh the prompt when Alt+r is pressed
 Set-PSReadLineKeyHandler -Key "Alt+r" `
                          -BriefDescription RefreshPrompt `
                          -LongDescription "Refresh the entire prompt" `
                          -ScriptBlock {
     param($key, $arg)
 
-    # Set the redraw flag so that the prompt isn't recalculated
+    # Set the redraw flag so that the prompt isn't recalculated - May still be recalculated if the window is resized
     $global:IsPromptRedraw = $true
 
     # Redraw the prompt

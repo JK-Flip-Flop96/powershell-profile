@@ -150,7 +150,7 @@ function prompt {
 
     Current Format:
     [NewLine]
-    [Privelege] [User] @ [Host] in [Directory] [on [GitBranch] [GitStatus]] [Time] [ExitCode] [NewLine]
+    [Privelege] [User] @ [Host] in [Directory] [on [GitBranch] [GitStatus]] [Nesting Level] [Time] [ExitCode] Right Aligned -> [Execution Time (>=5s)] [NewLine]
     [Vi Mode/Prompt] #>
 
     # Check if the window has been resized
@@ -164,21 +164,20 @@ function prompt {
         
         # --- Pre-Prompt ---
         # Gather values that may be updated before they are checked
-
-        # Not sure why the exit code is sometimes null, but this fixes it
-        $CurrentExitCode = if ($null -eq $global:LASTEXITCODE) { 0 } else { $global:LASTEXITCODE }
+        $CurrentExitCode = $global:LASTEXITCODE
+        $CurrentExitCode ??= 0 # If $CurrentExitCode is null, set it to 0
 
         # --- Start Prompt ---
 
-        # Start the prompt with a blank line
-        $LeftStatus = "`n"
+        # Start the prompt with a blank line to separate it from the previous command
+        $BlankLine = "`n"
 
-        # --- Status Line ---
+        # --- Left Status ---
 
         # ***User***
         # If the user is an admin, prefix the username with a red "#",otherwise prefix with a blue "$"
         # IsAdminSession is a global variable set in the prompt setup
-        $LeftStatus += if ($IsAdminSession) { "$($PSStyle.Foreground.Red)% " } else { "$($PSStyle.Foreground.Blue)# " }
+        $LeftStatus = if ($IsAdminSession) { "$($PSStyle.Foreground.Red)% " } else { "$($PSStyle.Foreground.Blue)# " }
 
         # Username may be null, in this case derive the username from the name of the user's home folder (for WSL mainly)
         if($null -eq $env:UserName){
@@ -220,8 +219,10 @@ function prompt {
             $LeftStatus += "$($PSStyle.Foreground.BrightWhite)C:$($PSStyle.Foreground.Red)$CurrentExitCode "
         }
 
-        # --- Right Align ---
+        # Since the left status is complete, trim the trailing space
+        $LeftStatus = $LeftStatus.TrimEnd()
 
+        # --- Right Status ---
         $RightStatus = ""
 
         # ***Duration***
@@ -234,21 +235,21 @@ function prompt {
 
         # *** Padding ***
         # Pad the right side of the prompt right element appear on the right edge of the window
-        # To determine the correct amount of padding we need to strip the escape sequences from the prompt
-        $Padding = (" " * ($Host.UI.RawUI.WindowSize.Width - (($LeftStatus -replace "\x1b\[[0-9;]*m", "").Length + ($RightStatus -replace "\x1b\[[0-9;]*m", "").Length)))
-
+        # To determine the correct amount of padding we need to strip any ANSI escape sequences from the left and right status
+        $AnsiRegex = "\x1b\[[0-9;]*m"
+        $Padding = " " * ($Host.UI.RawUI.WindowSize.Width - (($LeftStatus -replace $AnsiRegex, "").Length + ($RightStatus -replace $AnsiRegex, "").Length))
 
         # --- End of Status Line ---
 
         # Cache the prompt
-        $global:CurrentPrompt = $LeftStatus + $Padding + $RightStatus
+        $global:CurrentPrompt = $BlankLine + $LeftStatus + $Padding + $RightStatus + "`r"
     }
 
     # Write the cached prompt, will contain the recalculated prompt if it is not a redraw
     Write-Host -Object $global:CurrentPrompt
 
     # --- Prompt Line ---
-    # This section is run every time the prompt is redrawn
+    # NOTE: This section is run every time the prompt is redrawn
 
     # ***Prompt***
     # Determine the prompt character and colour based on the vi mode
@@ -260,7 +261,7 @@ function prompt {
         $PromptColor = "Green"
     }
 
-    # Write the prompt character
+    # Write the prompt character - Using -ForegroundColor instead of $PSStyle.Foreground because PSReadLine doesn't seem to like PSStyle
     Write-Host -Object $PromptChar -NoNewline -ForegroundColor $PromptColor
 
     # Tell PSReadLine what the prompt character is
@@ -469,7 +470,7 @@ function Get-LastCommandDuration {
         if ($IncludeMilliseconds -and $Duration.Milliseconds -gt 0) { $DurationText += "{0:N0}ms" -f $Duration.Milliseconds }
 
         # Return the formatted time, trimming any trailing space
-        return $DurationText.TrimEnd()
+        return $($DurationText.Trim())
     }
 }
 
@@ -527,6 +528,66 @@ function Edit-ProfileFolder {
 function Write-CatppuccinBlocks {
     foreach($Colour in $CatppuccinMocha.GetEnumerator()){
         Write-Host "$($PSStyle.Foreground.FromRgb($Colour.Value))███" -NoNewline
+    }
+}
+
+function Get-BlockColour {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline = $true)]
+        [object]$InputObject
+    )
+    process {
+        Write-Host $_
+
+        switch ($InputObject.GetType().FullName) {
+            "System.Int32" { $($PSStyle | Select-Object -ExpandProperty $Position).FromRgb($InputObject) }
+            "System.String" { $PSStyle | Select-Object -ExpandProperty $Position | Select-Object -ExpandProperty $InputObject }
+        }
+    }
+}
+
+function Get-BlockStyle {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline = $true)]
+        [string]$InputObject
+    )
+    process {
+        switch ($InputObject) {
+            "Bold" { "$($PSStyle.Bold)" }
+            "Underline" { "$($PSStyle.Underline)" }
+            "Italic" { "$($PSStyle.Italic)" }
+        }
+    }
+}
+
+function Test-Shit {
+    $Block = @{
+        Condition = $true
+        Highlight = @{ Foreground = "Red"
+                       Background = 0x123456 
+                       Style = "Bold", "Underline", "Italic" }
+        ScriptBlock = { return "Hello World" }               
+    }
+
+    if ($Block.Condition) {
+        $output = ""
+
+        if ($Block.Highlight) {
+            $hl = $Block.Highlight
+            $output += Get-BlockColour @hl
+        }
+
+        if ($Block.Highlight.Style) {
+            $output += $Block.Highlight.Style | Get-BlockStyle | ForEach-Object { return $_ }
+        }
+
+        $output += $($Block.ScriptBlock.Invoke())
+
+        $output += $PSStyle.Reset
+
+        Write-Host $output
     }
 }
 
