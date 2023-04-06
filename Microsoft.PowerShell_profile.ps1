@@ -54,6 +54,9 @@ Import-Module Posh-NCR
 # Fuzzy-Winget
 Import-Module fuzzy-winget
 
+# Catppuccin
+Import-Module Catppuccin
+
 <# External Programs #>
 
 # Zoxide
@@ -78,6 +81,7 @@ $ENV:FZF_DEFAULT_OPTS=@"
 --color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8
 --color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc
 --color=marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8
+--color=border:#585b70
 "@
 
 <# Globals #>
@@ -102,56 +106,42 @@ $LastHostWidth = $Host.UI.RawUI.WindowSize.Width
 # Set by OnViModeChange to prevent the prompt from being recalculated when the vi mode is changed
 $IsPromptRedraw = $false
 
+# Used to determine if the prompt is being drawn for the first time
+$IsFirstPrompt = $true 
+
+# Set to true if the previous prompt was compact, i.e. after a screen clear or start of a new session
+$IsCompactPrompt = $true 
+
 # --- Colour Globals --- #
-
-# Catppuccin's Mocha theme
-# URL: https://github.com/catppuccin/catppuccin
-# Usage: $PSStyle.[Foreground/Background].FromRgb($CatppuccinMocha[<ColourName>])
-$CatppuccinMocha = [ordered]@{
-    # Colour Palette - 14 colours
-    Rosewater = 0xf5e0dc
-    Flamingo =  0xf2cdcd
-    Pink =      0xf5c2e7
-    Mauve =     0xcba6f7
-    Red =       0xf38ba8
-    Maroon =    0xeba0ac
-    Peach =     0xfab387
-    Yellow =    0xf9e2af
-    Green =     0xa6e3a1
-    Teal =      0x94e2d5
-    Sky =       0x89dceb
-    Sapphire =  0x74c7ec
-    Blue =      0x89b4fa
-    Lavender =  0xb4bef4
-
-    # Grayscale Palette - 12 colours
-    Text =      0xcdd6f4
-    Subtext1 =  0xbac2de
-    Subtext0 =  0xa6adc8
-    Overlay2 =  0x9399b2
-    Overlay1 =  0x7f849c
-    Overlay0 =  0x6c7086
-    Surface2 =  0x585b70
-    Surface1 =  0x45475a
-    Surface0 =  0x313244
-    Base =      0x1e1e2e
-    Mantle =    0x181825
-    Crust =     0x11111b
-}
+$Flavour = $Catppuccin["Mocha"]
 
 ################
 # Prompt Setup #
 ################
 
 function prompt {
-    <# Heavily inspired by the 'ys' theme included with Oh-My-Zsh
+    <#
+    .SYNOPSIS
+        Custom PowerShell prompt
+    
+    .DESCRIPTION
+        Custom PowerShell prompt. Heavily inspired by the 'ys' theme included with Oh-My-Zsh/Oh-My-Posh,
 
-    Instead of ys's $ prompt, I use a > for the prompt in vi insert mode and a < for the prompt in vi command mode
+        Required Modules:
+        - Catppuccin - for the colours
+        - Posh-Git - for the git branch and status
+        - PSReadLine - required for the accompanying OnViModeChanged Function to force a prompt redraw
 
-    Current Format:
-    [NewLine]
-    [Privelege] [User] @ [Host] in [Directory] [on [GitBranch] [GitStatus]] [Nesting Level] [Time] [ExitCode] Right Aligned -> [Execution Time (>=5s)] [NewLine]
-    [Vi Mode/Prompt] #>
+        Custom Elements:
+        Instead of ys's $ prompt, I use a > for the prompt in vi insert mode and a < for the prompt in vi command 
+        mode.
+
+        Current Format:
+        [NewLine]
+        [Privilege] [User] @ [Host] in [Directory] [on [GitBranch] [GitStatus]] [Nesting Level] [Time] [ExitCode] 
+        Right Aligned -> [Execution Time (if >= 5s)] [NewLine]
+        [Vi Mode/Prompt] 
+    #>
 
     # Check if the window has been resized
     if ($global:LastHostWidth -ne $Host.UI.RawUI.WindowSize.Width) {
@@ -170,53 +160,61 @@ function prompt {
         # --- Start Prompt ---
 
         # Start the prompt with a blank line to separate it from the previous command
-        $BlankLine = "`n"
+        if ($global:IsFirstPrompt) {
+            $global:IsFirstPrompt = $false
+            $BlankLine = "" # Don't add a blank line on the first prompt
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", Justification="Global variable is accessed from a different scope")]
+            $global:IsCompactPrompt = $true
+        } else {
+            $BlankLine = "`n"
+            $global:IsCompactPrompt = $false    
+        }
 
         # --- Left Status ---
 
         # ***User***
         # If the user is an admin, prefix the username with a red "#",otherwise prefix with a blue "$"
         # IsAdminSession is a global variable set in the prompt setup
-        $LeftStatus = if ($IsAdminSession) { "$($PSStyle.Foreground.Red)% " } else { "$($PSStyle.Foreground.Blue)# " }
+        $LeftStatus = if ($IsAdminSession) { "$($Flavour.Red.Foreground())% " } else { "$($Flavour.Blue.Foreground())# " }
 
         # Username may be null, in this case derive the username from the name of the user's home folder (for WSL mainly)
         if($null -eq $env:UserName){
-            $LeftStatus += "$($PSStyle.Foreground.Cyan)$($($env:Homepath | Split-Path -leaf)) "
+            $LeftStatus += "$($Flavour.Teal.Foreground())$($($env:Homepath | Split-Path -leaf)) "
         } else {
-            $LeftStatus += "$($PSStyle.Foreground.Cyan)$($env:UserName) "
+            $LeftStatus += "$($Flavour.Teal.Foreground())$($env:UserName) "
         }
 
         # ***Host***
-        $LeftStatus += "$($PSStyle.Foreground.BrightBlack)@ $($PSStyle.Foreground.Green)$($env:COMPUTERNAME) "
+        $LeftStatus += "$($Flavour.Surface2.Foreground())@ $($Flavour.Green.Foreground())$($env:COMPUTERNAME) "
         
         # ***Directory***
-        $LeftStatus += "$($PSStyle.Foreground.BrightBlack)in $($PSStyle.Foreground.Yellow)$($(Get-Location).ToString().replace($env:HOMEDRIVE + $env:HOMEPATH, '~').replace('Microsoft.PowerShell.Core\FileSystem::', '')) "
+        $LeftStatus += "$($Flavour.Surface2.Foreground())in $($Flavour.Yellow.Foreground())$($(Get-Location).ToString().replace($env:HOMEDRIVE + $env:HOMEPATH, '~').replace('Microsoft.PowerShell.Core\FileSystem::', '')) "
         
         # ***Git***
         # If the current directory is a git repository, display the current branch
         if(($env:POSH_GIT_ENABLED -eq $true) -and ($status = Get-GitStatus -Force)){
             # Branch Name
-            $LeftStatus += "$($PSStyle.Foreground.BrightBlack)on $($PSStyle.Foreground.White)git:$($PSStyle.Foreground.Cyan)$($status.Branch)"
+            $LeftStatus += "$($Flavour.Surface2.Foreground())on $($Flavour.Text.Foreground())git:$($Flavour.Teal.Foreground())$($status.Branch)"
             
             # Branch Status - Dirty (x) or Clean (o)
-            $LeftStatus += if ($status.HasWorking) { "$($PSStyle.Foreground.Red) x " } else { "$($PSStyle.Foreground.Green) o " }
+            $LeftStatus += if ($status.HasWorking) { "$($Flavour.Red.Foreground()) x " } else { "$($Flavour.Green.Foreground()) o " }
         }
 
         # ***Timestamp***
         # Use the cached timestamp to prevent the time from moving forward  
-        $LeftStatus += "$($PSStyle.Foreground.BrightBlack)[$(Get-Date -Format "HH:mm:ss")] "
+        $LeftStatus += "$($Flavour.Surface2.Foreground())[$(Get-Date -Format "HH:mm:ss")] "
 
         # ***Nesting***
         # If the prompt is nested, display the nesting level
         if($nestedPromptLevel -gt 0){ # Don't display the nesting level if it is 0
-            $LeftStatus += "$($PSStyle.Foreground.BrightWhite)L:$($PSStyle.Foreground.Yellow)$NestedPromptLevel "
+            $LeftStatus += "$($Flavour.Text.Foreground())L:$($Flavour.Yellow.Foreground())$NestedPromptLevel "
         }
 
         # ys has a counter for the number of commands run here, but I don't see the point of it
 
         # ***Exit Code***
         if($CurrentExitCode -ne 0){ # Don't display the exit code if it is 0 (Success)
-            $LeftStatus += "$($PSStyle.Foreground.BrightWhite)C:$($PSStyle.Foreground.Red)$CurrentExitCode "
+            $LeftStatus += "$($Flavour.Text.Foreground())C:$($Flavour.Red.Foreground())$CurrentExitCode "
         }
 
         # Since the left status is complete, trim the trailing space
@@ -230,7 +228,7 @@ function prompt {
         $LastCommandTime = Get-LastCommandDuration -MinimumSeconds 5
 
         if ($LastCommandTime -gt 0) {
-            $RightStatus += "$($PSStyle.Foreground.BrightBlack)took $($PSStyle.Foreground.Magenta)$($LastCommandTime)"
+            $RightStatus += "$($Flavour.Surface2.Foreground())took $($Flavour.Mauve.Foreground())$($LastCommandTime)"
         }
 
         # *** Padding ***
@@ -284,7 +282,8 @@ function prompt {
 # Cursor: Blinking block for insert mode, blinking line for command mode
 function OnViModeChange {
     # Suppress the warning as the global variables updated below are basically parameters for the prompt function
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", Justification="Global variable is accessed from a different scope", Scope="Function")]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", 
+        Justification="Global variable is accessed from a different scope", Scope="Function")]
     param(
         [Parameter(ValueFromRemainingArguments=$true)]
         [string]$Mode
@@ -299,6 +298,9 @@ function OnViModeChange {
     # Change the cursor style
     Write-Host $(if ($global:ViCommandMode) { "`e[1 q" } else { "`e[5 q" })
 
+    # PSReadLine needs to know how tall the prompt is
+    Set-PSReadLineOption -ExtraPromptLineCount $(if ($global:IsCompactPrompt) { 1 } else { 2 })
+
     # Redraw the prompt
     [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
 }
@@ -310,8 +312,25 @@ $PSReadLineOptions = @{
 
     # Set colours
     Colors = @{
-        # Colour the continuation prompt cyan to keep it similar to yet distinct from both the command prompt and insert prompt
-        ContinuationPrompt = "Cyan"
+        # Largely based on the proposed Code Editor style guide in issue #1997 in the Catppuccin/Catppuccin repo
+        ContinuationPrompt     = $Flavour.Teal.Foreground()
+        Command                = $Flavour.Teal.Foreground()
+        Comment                = $Flavour.Overlay0.Foreground()
+        Default                = $Flavour.Text.Foreground()
+        Emphasis               = $Flavour.Red.Foreground()
+        Error                  = $Flavour.Red.Foreground()
+        InlinePrediction       = $Flavour.Overlay0.Foreground()
+        Keyword                = $Flavour.Mauve.Foreground()
+        ListPrediction         = $Flavour.Mauve.Foreground()
+        ListPredictionSelected = $Flavour.Surface0.Background()
+        Member                 = $Flavour.Rosewater.Foreground()
+        Number                 = $Flavour.Peach.Foreground()
+        Operator               = $Flavour.Sky.Foreground()
+        Parameter              = $Flavour.Maroon.Foreground()
+        Selection              = $Flavour.Surface0.Background()
+        String                 = $Flavour.Green.Foreground()
+        Type                   = $Flavour.Yellow.Foreground()
+        Variable               = $Flavour.Text.Foreground()
     }
 
     # Define string used as the continuation prompt
@@ -322,7 +341,8 @@ $PSReadLineOptions = @{
 
     # Prompt Spans multiple lines, required because InvokePrompt is used in OnViModeChange to modify the prompt
     # Currently blank line -> status line -> prompt line
-    ExtraPromptLineCount = 2
+    # This value is updated in OnViModeChange
+    ExtraPromptLineCount = 1
 
     # Don't display duplicates in the history search
     HistoryNoDuplicates = $true
@@ -415,7 +435,7 @@ function Add-NewTerminalIcon{
 # ***Alias Functions***
 
 # TODO: Change the below functions to allow pass through of parameters to Get-ChildItem
-# But I'm not doing it now because I can't fucking figure this shit out
+# NOTE: But I'm not doing it now because I can't fucking figure this shit out
 
 # Make ll more like unix ls -l
 function Get-ChildItemUnixStyleLong {
@@ -509,6 +529,8 @@ function Get-WinGetUpdates {
 
 # Function to reset the Last exit code on a clear screen
 function Clear-HostandExitCode {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", Justification="Global variable is accessed from a different scope")]
+    $global:IsFirstPrompt = $true # Reset this flag so that the blank line is not printed
     $global:LASTEXITCODE = 0
     Clear-Host
 }
@@ -521,14 +543,6 @@ function Edit-Profile {
 # Function to open the current profile folder in VSCode. Useful for editing included files
 function Edit-ProfileFolder {
     code $PSScriptRoot
-}
-
-# Print blocks showing all of the colours in the Catppuccin Mocha theme
-# I guess this could be used to test true colour support?
-function Write-CatppuccinBlocks {
-    foreach($Colour in $CatppuccinMocha.GetEnumerator()){
-        Write-Host "$($PSStyle.Foreground.FromRgb($Colour.Value))███" -NoNewline
-    }
 }
 
 function Get-BlockColour {
@@ -650,6 +664,7 @@ Set-Alias -Name fzfe -Value Invoke-FzfES # fuzzy es
 Set-Alias -Name fpi -Value Invoke-FuzzyPackageInstall # fuzzy package install
 Set-Alias -Name fpr -Value Invoke-FuzzyPackageUninstall # fuzzy package uninstall (remove)
 Set-Alias -Name fpu -Value Invoke-FuzzyPackageUpdate # fuzzy package update
+Set-Alias -Name cpc -Value Clear-FuzzyPackagesCache # clear the fuzzy package cache
 
 <# Argument Compeleters #>
 

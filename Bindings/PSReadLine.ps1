@@ -192,6 +192,14 @@ Set-PSReadLineKeyHandler -Key "Alt+r" `
     # Set the redraw flag so that the prompt isn't recalculated - May still be recalculated if the window is resized
     $global:IsPromptRedraw = $true
 
+    # PSReadLine needs to know how tall the prompt is
+    if ($global:IsCompactPrompt){
+        # If the blank line is not displayed, the prompt is only 1 extra line taller
+        Set-PSReadLineOption -ExtraPromptLineCount 1
+    }else{
+        Set-PSReadLineOption -ExtraPromptLineCount 2
+    }
+
     # Redraw the prompt
     [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
 }
