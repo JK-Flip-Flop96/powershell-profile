@@ -2,6 +2,11 @@
 # Module Setup #
 ################
 
+# Variables required for importing modules
+
+# Path to Scoop's installation directory
+$ScoopHome = $($(Get-Item $(Get-Command scoop.ps1).Path).Directory.Parent.FullName)
+
 # *** Function Modules ***
 
 # PSReadLine
@@ -13,19 +18,12 @@ if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -
 }
 
 # gsudo
-Import-Module "$env:USERPROFILE\scoop\apps\gsudo\current\gsudoModule.psd1"
+Import-Module "$ScoopHome\apps\gsudo\current\gsudoModule.psd1"
 
 # *** Style Modules ***
 
-# Posh-Git
-try{
-    Import-Module -Name posh-git
-
-    $env:POSH_GIT_ENABLED = $true # Used to determine if posh-git is loaded
-}catch{
-    $env:POSH_GIT_ENABLED = $false
-}
-
+# Posh-Git - Variable used to determine if Posh-Git is loaded for use in the prompt
+$env:POSH_GIT_ENABLED = [bool]$(Import-Module -Name posh-git -PassThru -ErrorAction SilentlyContinue)
 
 # Terminal-Icons
 Import-Module -Name Terminal-Icons
@@ -39,10 +37,10 @@ Import-Module -Name Microsoft.WinGet.Client
 Import-Module "$env:ChocolateyInstall\helpers\chocolateyInstaller.psm1"
 
 # Scoop-completion: Auto-Completion for scoop 
-Import-Module "$($(Get-Item $(Get-Command scoop.ps1).Path).Directory.Parent.FullName)\modules\scoop-completion"
+Import-Module "$ScoopHome\modules\scoop-completion"
 
 # posh-vcpkg
-Import-Module 'C:\tools\vcpkg\scripts\posh-vcpkg'
+Import-Module "$ScoopHome\apps\vcpkg\current\scripts\posh-vcpkg"
 
 # *** Other Modules ***
 
@@ -74,19 +72,9 @@ try{
 
 <# Environment Variables #>
 
-# *** Fzf ***
-
-# Colours - Uses Catppuccin theme from https://github.com/catppuccin/fzf
-$ENV:FZF_DEFAULT_OPTS=@"
---color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8
---color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc
---color=marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8
---color=border:#585b70
-"@
-
 <# Globals #>
-# Determine if the current user is elevated
-$IsAdminSession =  ([Security.Principal.WindowsPrincipal] ([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+# Determine if the current user has elevated privileges
+$IsAdminSession = ([Security.Principal.WindowsPrincipal]([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 # --- Prompt Globals --- #
 # Each of the following variables are declared as global so that they can be modified outside of the prompt function
@@ -107,13 +95,19 @@ $LastHostWidth = $Host.UI.RawUI.WindowSize.Width
 $IsPromptRedraw = $false
 
 # Used to determine if the prompt is being drawn for the first time
-$IsFirstPrompt = $true 
-
-# Set to true if the previous prompt was compact, i.e. after a screen clear or start of a new session
-$IsCompactPrompt = $true 
+$IsFirstPrompt = $true
 
 # --- Colour Globals --- #
 $Flavour = $Catppuccin["Mocha"]
+
+# FZF Colours - Reimplementation and extension of the Catppuccin theme from https://github.com/catppuccin/fzf
+$ENV:FZF_DEFAULT_OPTS=@"
+--color=bg+:$($Flavour.Surface0),bg:$($Flavour.Base),spinner:$($Flavour.Rosewater)
+--color=hl:$($Flavour.Red),fg:$($Flavour.Text),header:$($Flavour.Red)
+--color=info:$($Flavour.Mauve),pointer:$($Flavour.Rosewater.Hex()),marker:$($Flavour.Rosewater)
+--color=fg+:$($Flavour.Text),prompt:$($Flavour.Mauve),hl+:$($Flavour.Red)
+--color=border:$($Flavour.Surface2)
+"@
 
 ################
 # Prompt Setup #
@@ -159,15 +153,14 @@ function prompt {
 
         # --- Start Prompt ---
 
-        # Start the prompt with a blank line to separate it from the previous command
+        # If the prompt follows another prompt, add a blank line to separate them
         if ($global:IsFirstPrompt) {
             $global:IsFirstPrompt = $false
-            $BlankLine = "" # Don't add a blank line on the first prompt
-            [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", Justification="Global variable is accessed from a different scope")]
-            $global:IsCompactPrompt = $true
+            $BlankLine = "" 
+            Set-PSReadLineOption -ExtraPromptLineCount 1
         } else {
             $BlankLine = "`n"
-            $global:IsCompactPrompt = $false    
+            Set-PSReadLineOption -ExtraPromptLineCount 2
         }
 
         # --- Left Status ---
@@ -175,29 +168,45 @@ function prompt {
         # ***User***
         # If the user is an admin, prefix the username with a red "#",otherwise prefix with a blue "$"
         # IsAdminSession is a global variable set in the prompt setup
-        $LeftStatus = if ($IsAdminSession) { "$($Flavour.Red.Foreground())% " } else { "$($Flavour.Blue.Foreground())# " }
-
-        # Username may be null, in this case derive the username from the name of the user's home folder (for WSL mainly)
-        if($null -eq $env:UserName){
-            $LeftStatus += "$($Flavour.Teal.Foreground())$($($env:Homepath | Split-Path -leaf)) "
+        $LeftStatus = if ($IsAdminSession) { 
+            "$($Flavour.Red.Foreground())% "
         } else {
-            $LeftStatus += "$($Flavour.Teal.Foreground())$($env:UserName) "
+            "$($Flavour.Blue.Foreground())# "
+        }
+
+        # Username may be null, in this case derive the username from the name of the user's home folder 
+        # Seems to be required when running pwsh.exe from within WSL mainly
+        $LeftStatus += if($null -eq $env:UserName){
+            "$($Flavour.Teal.Foreground())$($($env:Homepath | Split-Path -leaf)) "
+        } else {
+            "$($Flavour.Teal.Foreground())$($env:UserName) "
         }
 
         # ***Host***
         $LeftStatus += "$($Flavour.Surface2.Foreground())@ $($Flavour.Green.Foreground())$($env:COMPUTERNAME) "
         
-        # ***Directory***
-        $LeftStatus += "$($Flavour.Surface2.Foreground())in $($Flavour.Yellow.Foreground())$($(Get-Location).ToString().replace($env:HOMEDRIVE + $env:HOMEPATH, '~').replace('Microsoft.PowerShell.Core\FileSystem::', '')) "
+        # ***Location***
+        $Location = $(Get-Location).ToString()
+
+        # Clean up the location string
+        $Location = $Location.replace($env:HOMEDRIVE + $env:HOMEPATH, '~') 
+        $Location = $Location.replace('Microsoft.PowerShell.Core\FileSystem::', '') 
+        
+        $LeftStatus += "$($Flavour.Surface2.Foreground())in $($Flavour.Yellow.Foreground())$Location "
         
         # ***Git***
         # If the current directory is a git repository, display the current branch
         if(($env:POSH_GIT_ENABLED -eq $true) -and ($status = Get-GitStatus -Force)){
             # Branch Name
-            $LeftStatus += "$($Flavour.Surface2.Foreground())on $($Flavour.Text.Foreground())git:$($Flavour.Teal.Foreground())$($status.Branch)"
+            $LeftStatus += "$($Flavour.Surface2.Foreground())on "
+            $LeftStatus += "$($Flavour.Text.Foreground())git:$($Flavour.Teal.Foreground())$($status.Branch)"
             
             # Branch Status - Dirty (x) or Clean (o)
-            $LeftStatus += if ($status.HasWorking) { "$($Flavour.Red.Foreground()) x " } else { "$($Flavour.Green.Foreground()) o " }
+            $LeftStatus += if ($status.HasWorking) { 
+                "$($Flavour.Red.Foreground()) x " 
+            } else {
+                "$($Flavour.Green.Foreground()) o " 
+            }
         }
 
         # ***Timestamp***
@@ -225,15 +234,17 @@ function prompt {
 
         # ***Duration***
         # Display the duration of the last command
-        $LastCommandTime = Get-LastCommandDuration -MinimumSeconds 5
+        $LastCommandTime = Get-LastCommandDuration -MinimumSeconds 0
 
         if ($LastCommandTime -gt 0) {
-            $RightStatus += "$($Flavour.Surface2.Foreground())took $($Flavour.Mauve.Foreground())$($LastCommandTime)"
+            $RightStatus += "$($Flavour.Surface2.Foreground())took "
+            $RightStatus += "$($Flavour.Mauve.Foreground())$($LastCommandTime)"
         }
 
         # *** Padding ***
         # Pad the right side of the prompt right element appear on the right edge of the window
-        # To determine the correct amount of padding we need to strip any ANSI escape sequences from the left and right status
+        # To determine the correct amount of padding we need to strip any ANSI escape sequences from the left and 
+        # right status
         $AnsiRegex = "\x1b\[[0-9;]*m"
         $Padding = " " * ($Host.UI.RawUI.WindowSize.Width - (($LeftStatus -replace $AnsiRegex, "").Length + ($RightStatus -replace $AnsiRegex, "").Length))
 
@@ -298,9 +309,6 @@ function OnViModeChange {
     # Change the cursor style
     Write-Host $(if ($global:ViCommandMode) { "`e[1 q" } else { "`e[5 q" })
 
-    # PSReadLine needs to know how tall the prompt is
-    Set-PSReadLineOption -ExtraPromptLineCount $(if ($global:IsCompactPrompt) { 1 } else { 2 })
-
     # Redraw the prompt
     [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
 }
@@ -312,25 +320,32 @@ $PSReadLineOptions = @{
 
     # Set colours
     Colors = @{
-        # Largely based on the proposed Code Editor style guide in issue #1997 in the Catppuccin/Catppuccin repo
+        # Largely based on the proposed Code Editor style guide in pr #1997 in the Catppuccin/Catppuccin repo
+        # Emphasis, ListPrediction and ListPredictionSelected are inspired by the Catppuccin fzf theme
+        
+        # Powershell colours
         ContinuationPrompt     = $Flavour.Teal.Foreground()
-        Command                = $Flavour.Teal.Foreground()
-        Comment                = $Flavour.Overlay0.Foreground()
-        Default                = $Flavour.Text.Foreground()
         Emphasis               = $Flavour.Red.Foreground()
-        Error                  = $Flavour.Red.Foreground()
+        Selection              = $Flavour.Surface0.Background()
+        
+        # PSReadLine prediction colours
         InlinePrediction       = $Flavour.Overlay0.Foreground()
-        Keyword                = $Flavour.Mauve.Foreground()
         ListPrediction         = $Flavour.Mauve.Foreground()
         ListPredictionSelected = $Flavour.Surface0.Background()
+
+        # Syntax highlighting
+        Command                = $Flavour.Blue.Foreground()
+        Comment                = $Flavour.Overlay0.Foreground()
+        Default                = $Flavour.Text.Foreground()
+        Error                  = $Flavour.Red.Foreground()
+        Keyword                = $Flavour.Mauve.Foreground()
         Member                 = $Flavour.Rosewater.Foreground()
         Number                 = $Flavour.Peach.Foreground()
         Operator               = $Flavour.Sky.Foreground()
-        Parameter              = $Flavour.Maroon.Foreground()
-        Selection              = $Flavour.Surface0.Background()
+        Parameter              = $Flavour.Pink.Foreground()
         String                 = $Flavour.Green.Foreground()
         Type                   = $Flavour.Yellow.Foreground()
-        Variable               = $Flavour.Text.Foreground()
+        Variable               = $Flavour.Peach.Foreground()
     }
 
     # Define string used as the continuation prompt
@@ -381,7 +396,14 @@ if ($PSVersionTable.PSVersion.Major -gt 7 -or ($PSVersionTable.PSVersion.Major -
         $PSStyle.Progress.UseOSCIndicator = $true
     }
 
-    $PSStyle.Formatting.TableHeader = "`e[33;3m" # Yellow Italics
+    # Set the colours for the various formatting types
+    $PSStyle.Formatting.Debug        = $Flavour.Sky.Foreground()
+    $PSStyle.Formatting.Error        = $Flavour.Red.Foreground()
+    $PSStyle.Formatting.ErrorAccent  = $Flavour.Blue.Foreground()
+    $PSStyle.Formatting.FormatAccent = $Flavour.Teal.Foreground()
+    $PSStyle.Formatting.TableHeader  = $Flavour.Rosewater.Foreground()
+    $PSStyle.Formatting.Verbose      = $Flavour.Yellow.Foreground()
+    $PSStyle.Formatting.Warning      = $Flavour.Peach.Foreground()
 }
 
 #############
