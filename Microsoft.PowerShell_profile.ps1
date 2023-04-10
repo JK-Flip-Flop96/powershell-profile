@@ -37,7 +37,7 @@ Import-Module -Name Microsoft.WinGet.Client
 Import-Module "$env:ChocolateyInstall\helpers\chocolateyInstaller.psm1"
 
 # Scoop-completion: Auto-Completion for scoop 
-Import-Module "$ScoopHome\modules\scoop-completion"
+Import-Module -Name Scoop-Completion
 
 # posh-vcpkg
 Import-Module "$ScoopHome\apps\vcpkg\current\scripts\posh-vcpkg"
@@ -97,6 +97,15 @@ $IsPromptRedraw = $false
 # Used to determine if the prompt is being drawn for the first time
 $IsFirstPrompt = $true
 
+# - Prompt Configuration -
+# The following variables are used to configure the prompt
+
+# Maximum length of the directory path as a percentage of the window width (0.25 = 25%)
+$MaxDirLengthPercent = 0.25 
+
+# Length to which path segments are truncated, Must be >= 1
+$TruncateLength = 2
+
 # --- Colour Globals --- #
 $Flavour = $Catppuccin["Mocha"]
 
@@ -121,18 +130,29 @@ function prompt {
     .DESCRIPTION
         Custom PowerShell prompt. Heavily inspired by the 'ys' theme included with Oh-My-Zsh/Oh-My-Posh,
 
-        Required Modules:
+        REQUIRED MODULES:
         - Catppuccin - for the colours
         - Posh-Git - for the git branch and status
         - PSReadLine - required for the accompanying OnViModeChanged Function to force a prompt redraw
 
-        Custom Elements:
+        CUSTOM ELEMENTS:
+        On top of 'ys', I have added the following elements:
+
+        Debug:
+        If the current session is in debug mode, the prompt will be prefixed with "[!]" in red.
+        
+        Prompt:
         Instead of ys's $ prompt, I use a > for the prompt in vi insert mode and a < for the prompt in vi command 
         mode.
 
-        Current Format:
+        Time:
+        I have also added an execution time to the prompt if the execution time is >= 5 seconds. This is placed at 
+        the end of the prompt and is right aligned.
+
+        CURRENT FORMAT:
         [NewLine]
-        [Privilege] [User] @ [Host] in [Directory] [on [GitBranch] [GitStatus]] [Nesting Level] [Time] [ExitCode] 
+        Left Aligned  -> [Debug] [Privilege] [User] @ [Host] in [Directory] [on [GitBranch] [GitStatus]] 
+                      -> [Nesting Level] [Time] [ExitCode] 
         Right Aligned -> [Execution Time (if >= 5s)] [NewLine]
         [Vi Mode/Prompt] 
     #>
@@ -165,10 +185,19 @@ function prompt {
 
         # --- Left Status ---
 
+        # ***Debug***
+        # If the $PSDebugContext variable is set, the user is in debug mode, prefix the prompt with a red "!"
+        # NOTE: This seems to be flaky, sometimes it is set, sometimes it is not
+        $LeftStatus = if (Test-Path "Variable:\PSDebugContext") {
+            "$($Flavour.Surface2.Foreground())[" + 
+            "$($Flavour.Red.Foreground())$($PSStyle.Bold)!$($PSStyle.BoldOff)" +
+            "$($Flavour.Surface2.Foreground())] "
+        }
+
         # ***User***
         # If the user is an admin, prefix the username with a red "#",otherwise prefix with a blue "$"
         # IsAdminSession is a global variable set in the prompt setup
-        $LeftStatus = if ($IsAdminSession) { 
+        $LeftStatus += if ($IsAdminSession) { 
             "$($Flavour.Red.Foreground())% "
         } else {
             "$($Flavour.Blue.Foreground())# "
@@ -186,67 +215,69 @@ function prompt {
         $LeftStatus += "$($Flavour.Surface2.Foreground())@ $($Flavour.Green.Foreground())$($env:COMPUTERNAME) "
         
         # ***Location***
-        $Location = $(Get-Location).ToString()
-
-        # Clean up the location string
-        $Location = $Location.replace($env:HOMEDRIVE + $env:HOMEPATH, '~') 
-        $Location = $Location.replace('Microsoft.PowerShell.Core\FileSystem::', '') 
-        
-        $LeftStatus += "$($Flavour.Surface2.Foreground())in $($Flavour.Yellow.Foreground())$Location "
+        $LeftStatus += "$($Flavour.Surface2.Foreground())in " + 
+            "$($Flavour.Yellow.Foreground())$(Get-LocationFormatted) "
         
         # ***Git***
         # If the current directory is a git repository, display the current branch
         if(($env:POSH_GIT_ENABLED -eq $true) -and ($status = Get-GitStatus -Force)){
             # Branch Name
-            $LeftStatus += "$($Flavour.Surface2.Foreground())on "
-            $LeftStatus += "$($Flavour.Text.Foreground())git:$($Flavour.Teal.Foreground())$($status.Branch)"
+            $LeftStatus += "$($Flavour.Surface2.Foreground())on " +
+                "$($Flavour.Text.Foreground())git:$($Flavour.Teal.Foreground())$($status.Branch) "
             
+            $LeftStatus += "$($Flavour.Surface2.Foreground())["
+
             # Branch Status - Dirty (x) or Clean (o)
             $LeftStatus += if ($status.HasWorking) { 
-                "$($Flavour.Red.Foreground()) x " 
+                "$($Flavour.Red.Foreground())x" 
             } else {
-                "$($Flavour.Green.Foreground()) o " 
+                "$($Flavour.Green.Foreground())o" 
             }
-        }
 
-        # ***Timestamp***
-        # Use the cached timestamp to prevent the time from moving forward  
-        $LeftStatus += "$($Flavour.Surface2.Foreground())[$(Get-Date -Format "HH:mm:ss")] "
+            $LeftStatus += "$($Flavour.Surface2.Foreground())] "
+        }
 
         # ***Nesting***
         # If the prompt is nested, display the nesting level
-        if($nestedPromptLevel -gt 0){ # Don't display the nesting level if it is 0
-            $LeftStatus += "$($Flavour.Text.Foreground())L:$($Flavour.Yellow.Foreground())$NestedPromptLevel "
+        $LeftStatus += if($nestedPromptLevel -gt 0){ # Don't display the nesting level if it is 0
+            "$($Flavour.Text.Foreground())L:$($Flavour.Yellow.Foreground())$NestedPromptLevel "
         }
 
         # ys has a counter for the number of commands run here, but I don't see the point of it
 
         # ***Exit Code***
-        if($CurrentExitCode -ne 0){ # Don't display the exit code if it is 0 (Success)
-            $LeftStatus += "$($Flavour.Text.Foreground())C:$($Flavour.Red.Foreground())$CurrentExitCode "
+        $LeftStatus += if($CurrentExitCode -ne 0){ # Don't display the exit code if it is 0 (Success)
+            "$($Flavour.Text.Foreground())C:$($Flavour.Red.Foreground())$CurrentExitCode "
         }
 
         # Since the left status is complete, trim the trailing space
         $LeftStatus = $LeftStatus.TrimEnd()
 
         # --- Right Status ---
-        $RightStatus = ""
 
         # ***Duration***
         # Display the duration of the last command
-        $LastCommandTime = Get-LastCommandDuration -MinimumSeconds 0
+        $LastCommandTime = Get-LastCommandDuration -MinimumSeconds 5
 
-        if ($LastCommandTime -gt 0) {
-            $RightStatus += "$($Flavour.Surface2.Foreground())took "
-            $RightStatus += "$($Flavour.Mauve.Foreground())$($LastCommandTime)"
+        $RightStatus = if ($LastCommandTime -gt 0) {
+            "$($Flavour.Surface2.Foreground())took $($Flavour.Mauve.Foreground())$($LastCommandTime) "
         }
 
+        # ***Timestamp*** 
+        $RightStatus += "$($Flavour.Surface2.Foreground())[" + 
+            "$($Flavour.Lavender.Foreground())$(Get-Date -Format "HH:mm:ss")" + 
+            "$($Flavour.Surface2.Foreground())] "
+
+        # Since the right status is complete, trim the trailing space
+        $RightStatus = $RightStatus.TrimEnd()
+
         # *** Padding ***
-        # Pad the right side of the prompt right element appear on the right edge of the window
+        # Pad the right side of the prompt right element so they appear on the right edge of the window
         # To determine the correct amount of padding we need to strip any ANSI escape sequences from the left and 
-        # right status
+        # right status segments
         $AnsiRegex = "\x1b\[[0-9;]*m"
-        $Padding = " " * ($Host.UI.RawUI.WindowSize.Width - (($LeftStatus -replace $AnsiRegex, "").Length + ($RightStatus -replace $AnsiRegex, "").Length))
+        $Padding = " " * ($Host.UI.RawUI.WindowSize.Width - (($LeftStatus -replace $AnsiRegex, "").Length + 
+            ($RightStatus -replace $AnsiRegex, "").Length))
 
         # --- End of Status Line ---
 
@@ -342,10 +373,10 @@ $PSReadLineOptions = @{
         Member                 = $Flavour.Rosewater.Foreground()
         Number                 = $Flavour.Peach.Foreground()
         Operator               = $Flavour.Sky.Foreground()
-        Parameter              = $Flavour.Pink.Foreground()
+        Parameter              = $Flavour.Pink.Foreground() # I prefer this to the proposed Flamingo colour
         String                 = $Flavour.Green.Foreground()
         Type                   = $Flavour.Yellow.Foreground()
-        Variable               = $Flavour.Peach.Foreground()
+        Variable               = $Flavour.Lavender.Foreground()
     }
 
     # Define string used as the continuation prompt
@@ -514,6 +545,35 @@ function Get-LastCommandDuration {
         # Return the formatted time, trimming any trailing space
         return $($DurationText.Trim())
     }
+}
+
+function Get-LocationFormatted{
+    $Location = $(Get-Location).ToString()
+
+    # Clean up the location string
+    $Location = $Location.replace($env:HOMEDRIVE + $env:HOMEPATH, '~') 
+    $Location = $Location.replace('Microsoft.PowerShell.Core\FileSystem::', '') 
+
+    # If the location is too long, shorten it 
+    if ($Location.Length -gt ($Host.UI.RawUI.WindowSize.Width * $MaxDirLengthPercent)) {
+        $SplitLocation = $Location.Split('\')
+
+        # First part of the path is always included, should be the drive letter or ~
+        $Location = $SplitLocation[0] + '\'
+        
+        # The following step will have unintended consequences if $TruncateLength is less than 1
+        if ($TruncateLength -lt 1) { $TruncateLength = 1 }
+
+        # Add the first letter of each folder in the path
+        for ($i = 1; $i -lt $SplitLocation.Length; $i++) {
+            $Location += $($SplitLocation[$i][0..($TruncateLength - 1)] -join "") + '\'
+        }
+
+        # Add the last folder in the path
+        $Location += $SplitLocation[-1]
+    }
+
+    return $Location
 }
 
 function Invoke-FzfBat{
