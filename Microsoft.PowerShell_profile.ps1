@@ -106,22 +106,31 @@ $MaxDirLengthPercent = 0.25
 # Length to which path segments are truncated, Must be >= 1
 $TruncateLength = 2
 
+# TODO: Create an ASCII only version of the following icons
 # Hashtable of icons to use for the prompt
 $PromptIcons = @{
+    
+    # Debug icon
+    Debug = "!"
+
+    # User type icons
+    Admin = "%"
+    User  = "#"
+
+    # Git status icons
+    Git = @{
+        Clean       = "o"
+        Dirty       = "x"
+        Ahead       = "↑"
+        Behind      = "↓"
+        AheadBehind = "↕"
+        Stash       = "*"
+    }
+
+    # Mode dependant prompt icons
     Prompt = @{
         Insert = ">"
         Command = "<"
-    }
-    Debug = "!"
-    Admin = "%"
-    User = "#"
-    Git = @{
-        Clean = "o"
-        Dirty = "x"
-        Ahead = "↑"
-        Behind = "↓"
-        AheadBehind = "↕"
-        Stash = "*"
     }
 }
 
@@ -228,7 +237,7 @@ function prompt {
         # NOTE: This seems to be flaky, sometimes it is set, sometimes it is not
         $LeftStatus = if (Test-Path "Variable:\PSDebugContext") {
             "$($Flavour.Surface2.Foreground())[" + 
-            "$($Flavour.Red.Foreground())$($PSStyle.Bold)!$($PSStyle.BoldOff)" +
+            "$($Flavour.Red.Foreground())$($PSStyle.Bold)$($PromptIcons.Debug)$($PSStyle.BoldOff)" +
             "$($Flavour.Surface2.Foreground())] "
         }
 
@@ -684,66 +693,6 @@ function Edit-Profile {
 # Function to open the current profile folder in VSCode. Useful for editing included files
 function Edit-ProfileFolder {
     code $PSScriptRoot
-}
-
-function Get-BlockColour {
-    [CmdletBinding()]
-    param(
-        [Parameter(ValueFromPipeline = $true)]
-        [object]$InputObject
-    )
-    process {
-        Write-Host $_
-
-        switch ($InputObject.GetType().FullName) {
-            "System.Int32" { $($PSStyle | Select-Object -ExpandProperty $Position).FromRgb($InputObject) }
-            "System.String" { $PSStyle | Select-Object -ExpandProperty $Position | Select-Object -ExpandProperty $InputObject }
-        }
-    }
-}
-
-function Get-BlockStyle {
-    [CmdletBinding()]
-    param(
-        [Parameter(ValueFromPipeline = $true)]
-        [string]$InputObject
-    )
-    process {
-        switch ($InputObject) {
-            "Bold" { "$($PSStyle.Bold)" }
-            "Underline" { "$($PSStyle.Underline)" }
-            "Italic" { "$($PSStyle.Italic)" }
-        }
-    }
-}
-
-function Test-Shit {
-    $Block = @{
-        Condition = $true
-        Highlight = @{ Foreground = "Red"
-                       Background = 0x123456 
-                       Style = "Bold", "Underline", "Italic" }
-        ScriptBlock = { return "Hello World" }               
-    }
-
-    if ($Block.Condition) {
-        $output = ""
-
-        if ($Block.Highlight) {
-            $hl = $Block.Highlight
-            $output += Get-BlockColour @hl
-        }
-
-        if ($Block.Highlight.Style) {
-            $output += $Block.Highlight.Style | Get-BlockStyle | ForEach-Object { return $_ }
-        }
-
-        $output += $($Block.ScriptBlock.Invoke())
-
-        $output += $PSStyle.Reset
-
-        Write-Host $output
-    }
 }
 
 ###########
