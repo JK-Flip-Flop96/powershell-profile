@@ -106,6 +106,25 @@ $MaxDirLengthPercent = 0.25
 # Length to which path segments are truncated, Must be >= 1
 $TruncateLength = 2
 
+# Hashtable of icons to use for the prompt
+$PromptIcons = @{
+    Prompt = @{
+        Insert = ">"
+        Command = "<"
+    }
+    Debug = "!"
+    Admin = "%"
+    User = "#"
+    Git = @{
+        Clean = "o"
+        Dirty = "x"
+        Ahead = "↑"
+        Behind = "↓"
+        AheadBehind = "↕"
+        Stash = "*"
+    }
+}
+
 # --- Colour Globals --- #
 $Flavour = $Catppuccin["Mocha"]
 
@@ -217,9 +236,9 @@ function prompt {
         # If the user is an admin, prefix the username with a red "#",otherwise prefix with a blue "$"
         # IsAdminSession is a global variable set in the prompt setup
         $LeftStatus += if ($IsAdminSession) { 
-            "$($Flavour.Red.Foreground())% "
+            "$($Flavour.Red.Foreground())$($PromptIcons.Admin) "
         } else {
-            "$($Flavour.Blue.Foreground())# "
+            "$($Flavour.Blue.Foreground())$($PromptIcons.User) "
         }
 
         # Username may be null, in this case derive the username from the name of the user's home folder 
@@ -249,25 +268,25 @@ function prompt {
             
             # Branch Status - Dirty (x) or Clean (o)
             $LeftStatus += if ($status.HasWorking) { 
-                "$($Flavour.Red.Foreground())x" 
+                "$($Flavour.Red.Foreground())$($PromptIcons.Git.Dirty)" 
             } else {
-                "$($Flavour.Green.Foreground())o" 
+                "$($Flavour.Green.Foreground())$($PromptIcons.Git.Clean)"
             }
 
             # Branch Status - Ahead (↑) or Behind (↓) or Both (↕)
-            if ($status.AheadBy -gt 0) {
+            $LeftStatus += if ($status.AheadBy -gt 0) {
                 if ($status.BehindBy -gt 0) {
-                    $LeftStatus += " $($Flavour.Yellow.Foreground())↕"
+                    " $($Flavour.Yellow.Foreground())$($PromptIcons.Git.AheadBehind)"
                 } else {
-                    $LeftStatus += " $($Flavour.Green.Foreground())↑"
+                    " $($Flavour.Green.Foreground())$($PromptIcons.Git.Ahead)"
                 }
             } elseif ($status.BehindBy -gt 0) {
-                $LeftStatus += " $($Flavour.Peach.Foreground())↓"
+                " $($Flavour.Peach.Foreground())$($PromptIcons.Git.Behind)"
             }
 
             # Branch Status - Has stashed changes (*)
-            if ($status.StashCount -gt 0) {
-                $LeftStatus += " $($Flavour.Sky.Foreground())*"
+            $LeftStatus += if ($status.StashCount -gt 0) {
+                " $($Flavour.Sky.Foreground())$($PromptIcons.Git.Stash)"
             }
 
             # End of Status section
@@ -334,10 +353,10 @@ function prompt {
     # ***Prompt***
     # Determine the prompt character and colour based on the vi mode
     if ($global:ViCommandMode) {
-        $PromptChar = "<"
+        $PromptChar = $PromptIcons.Prompt.Command
         $PromptColor = "Blue"
     } else {
-        $PromptChar = ">"
+        $PromptChar = $PromptIcons.Prompt.Insert
         $PromptColor = "Green"
     }
 
