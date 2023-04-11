@@ -281,7 +281,7 @@ function prompt {
                     " $($Flavour.Green.Foreground())$($PromptIcons.Git.Ahead)"
                 }
             } elseif ($status.BehindBy -gt 0) {
-                " $($Flavour.Peach.Foreground())$($PromptIcons.Git.Behind)"
+                " $($Flavour.Red.Foreground())$($PromptIcons.Git.Behind)"
             }
 
             # Branch Status - Has stashed changes (*)
