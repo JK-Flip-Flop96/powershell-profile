@@ -225,8 +225,9 @@ function prompt {
             $LeftStatus += "$($Flavour.Surface2.Foreground())on " +
                 "$($Flavour.Text.Foreground())git:$($Flavour.Teal.Foreground())$($status.Branch) "
             
+            # Status section
             $LeftStatus += "$($Flavour.Surface2.Foreground())["
-
+            
             # Branch Status - Dirty (x) or Clean (o)
             $LeftStatus += if ($status.HasWorking) { 
                 "$($Flavour.Red.Foreground())x" 
@@ -234,6 +235,18 @@ function prompt {
                 "$($Flavour.Green.Foreground())o" 
             }
 
+            # Branch Status - Ahead (↑) or Behind (↓) or Both (↕)
+            if ($status.AheadBy -gt 0) {
+                if ($status.BehindBy -gt 0) {
+                    $LeftStatus += "$($Flavour.Yellow.Foreground())↕"
+                } else {
+                    $LeftStatus += "$($Flavour.Green.Foreground())↑"
+                }
+            } elseif ($status.BehindBy -gt 0) {
+                $LeftStatus += "$($Flavour.Peach.Foreground())↓"
+            }
+
+            # End of Status section
             $LeftStatus += "$($Flavour.Surface2.Foreground())] "
         }
 
@@ -248,6 +261,9 @@ function prompt {
         # ***Exit Code***
         $LeftStatus += if($CurrentExitCode -ne 0){ # Don't display the exit code if it is 0 (Success)
             "$($Flavour.Text.Foreground())C:$($Flavour.Red.Foreground())$CurrentExitCode "
+        } elseif (-not $?) {
+            # If the last command failed, but the exit code is 0, display a question mark
+            "$($Flavour.Text.Foreground())C:$($Flavour.Red.Foreground())? "
         }
 
         # Since the left status is complete, trim the trailing space
@@ -321,7 +337,7 @@ function prompt {
 
 # Function to run every time the vi mode is changed
 # Prompt: Green '>' for insert mode, blue '<' for command mode - both distinct from the red error prompt character
-# Cursor: Blinking block for insert mode, blinking line for command mode
+# Cursor: Blinking block for command mode, blinking line for insert mode
 function OnViModeChange {
     # Suppress the warning as the global variables updated below are basically parameters for the prompt function
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", 
