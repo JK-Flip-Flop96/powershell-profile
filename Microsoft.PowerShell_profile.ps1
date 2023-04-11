@@ -214,7 +214,7 @@ function prompt {
     # Only recalculate the prompt if it is not a redraw
     if ((-not $global:IsPromptRedraw) -or ($null -eq $global:CurrentPrompt)) {
         # --- Pre-Prompt ---
-        
+
         # Gather values that may be updated before they are checked
         $CurrentExitCode = $global:LASTEXITCODE
         $CurrentExitCode ??= 0 # If $CurrentExitCode is null, set it to 0
