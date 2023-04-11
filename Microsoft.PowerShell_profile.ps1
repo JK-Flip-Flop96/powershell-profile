@@ -58,7 +58,7 @@ Import-Module Catppuccin
 <# External Programs #>
 
 # Zoxide
-try{
+try {
     Invoke-Expression (& { # Zoxide intialisation is different for PowerShell 5 and 6+ 
         $hook = if ($PSVersionTable.PSVersion.Major -lt 6) { 'prompt' } else { 'pwd' }
         (zoxide init --hook $hook powershell | Out-String)
@@ -66,7 +66,8 @@ try{
 
     # If Zoxide is loaded and available replace "cd" with it
     Set-Alias -Name cd -Value z -Option AllScope
-}catch{
+    Set-Alias -Name cdi -Value zi -Option AllScope # Interactive version of zoxide using fzf
+} catch {
     # Do Nothing
 }
 
@@ -100,8 +101,8 @@ $IsFirstPrompt = $true
 # - Prompt Configuration -
 # The following variables are used to configure the prompt
 
-# Maximum length of the directory path as a percentage of the window width (0.25 = 25%)
-$MaxDirLengthPercent = 0.25 
+# Maximum length of the directory path as a percentage of the window width (0.30 = 30%)
+$MaxDirLengthPercent = 0.30
 
 # Length to which path segments are truncated, Must be >= 1
 $TruncateLength = 2
@@ -111,34 +112,34 @@ $TruncateLength = 2
 $PromptIcons = @{
     
     # Debug icon
-    Debug = "!"
+    Debug  = '!'
 
     # User type icons
-    Admin = "%"
-    User  = "#"
+    Admin  = '%'
+    User   = '#'
 
     # Git status icons
-    Git = @{
-        Clean       = "o"
-        Dirty       = "x"
-        Ahead       = "↑"
-        Behind      = "↓"
-        AheadBehind = "↕"
-        Stash       = "*"
+    Git    = @{
+        Clean       = 'o'
+        Dirty       = 'x'
+        Ahead       = '↑'
+        Behind      = '↓'
+        AheadBehind = '↕'
+        Stash       = '*'
     }
 
     # Mode dependant prompt icons
     Prompt = @{
-        Insert = ">"
-        Command = "<"
+        Insert  = '>'
+        Command = '<'
     }
 }
 
 # --- Colour Globals --- #
-$Flavour = $Catppuccin["Mocha"]
+$Flavour = $Catppuccin['Mocha']
 
 # FZF Colours - Reimplementation and extension of the Catppuccin theme from https://github.com/catppuccin/fzf
-$ENV:FZF_DEFAULT_OPTS=@"
+$ENV:FZF_DEFAULT_OPTS = @"
 --color=bg+:$($Flavour.Surface0),bg:$($Flavour.Base),spinner:$($Flavour.Rosewater)
 --color=hl:$($Flavour.Red),fg:$($Flavour.Text),header:$($Flavour.Red)
 --color=info:$($Flavour.Mauve),pointer:$($Flavour.Rosewater.Hex()),marker:$($Flavour.Rosewater)
@@ -212,8 +213,8 @@ function prompt {
 
     # Only recalculate the prompt if it is not a redraw
     if ((-not $global:IsPromptRedraw) -or ($null -eq $global:CurrentPrompt)) {
-        
         # --- Pre-Prompt ---
+        
         # Gather values that may be updated before they are checked
         $CurrentExitCode = $global:LASTEXITCODE
         $CurrentExitCode ??= 0 # If $CurrentExitCode is null, set it to 0
@@ -223,7 +224,7 @@ function prompt {
         # If the prompt follows another prompt, add a blank line to separate them
         if ($global:IsFirstPrompt) {
             $global:IsFirstPrompt = $false
-            $BlankLine = "" 
+            $BlankLine = '' 
             Set-PSReadLineOption -ExtraPromptLineCount 1
         } else {
             $BlankLine = "`n"
@@ -235,7 +236,7 @@ function prompt {
         # ***Debug***
         # If the $PSDebugContext variable is set, the user is in debug mode, prefix the prompt with a red "!"
         # NOTE: This seems to be flaky, sometimes it is set, sometimes it is not
-        $LeftStatus = if (Test-Path "Variable:\PSDebugContext") {
+        $LeftStatus = if (Test-Path 'Variable:\PSDebugContext') {
             "$($Flavour.Surface2.Foreground())[" + 
             "$($Flavour.Red.Foreground())$($PSStyle.Bold)$($PromptIcons.Debug)$($PSStyle.BoldOff)" +
             "$($Flavour.Surface2.Foreground())] "
@@ -252,8 +253,8 @@ function prompt {
 
         # Username may be null, in this case derive the username from the name of the user's home folder 
         # Seems to be required when running pwsh.exe from within WSL mainly
-        $LeftStatus += if($null -eq $env:UserName){
-            "$($Flavour.Teal.Foreground())$($($env:Homepath | Split-Path -leaf)) "
+        $LeftStatus += if ($null -eq $env:UserName) {
+            "$($Flavour.Teal.Foreground())$($($env:Homepath | Split-Path -Leaf)) "
         } else {
             "$($Flavour.Teal.Foreground())$($env:UserName) "
         }
@@ -263,14 +264,14 @@ function prompt {
         
         # ***Location***
         $LeftStatus += "$($Flavour.Surface2.Foreground())in " + 
-            "$($Flavour.Yellow.Foreground())$(Get-LocationFormatted) "
+        "$($Flavour.Yellow.Foreground())$(Get-LocationFormatted) "
         
         # ***Git***
         # If the current directory is a git repository, display the current branch
-        if(($env:POSH_GIT_ENABLED -eq $true) -and ($status = Get-GitStatus -Force)){
+        if ($env:POSH_GIT_ENABLED -and ($status = Get-GitStatus -Force)) {
             # Branch Name
             $LeftStatus += "$($Flavour.Surface2.Foreground())on " +
-                "$($Flavour.Text.Foreground())git:$($Flavour.Teal.Foreground())$($status.Branch) "
+            "$($Flavour.Text.Foreground())git:$($Flavour.Teal.Foreground())$($status.Branch) "
             
             # Status section
             $LeftStatus += "$($Flavour.Surface2.Foreground())["
@@ -304,14 +305,16 @@ function prompt {
 
         # ***Nesting***
         # If the prompt is nested, display the nesting level
-        $LeftStatus += if($nestedPromptLevel -gt 0){ # Don't display the nesting level if it is 0
+        $LeftStatus += if ($nestedPromptLevel -gt 0) {
+            # Don't display the nesting level if it is 0
             "$($Flavour.Text.Foreground())L:$($Flavour.Yellow.Foreground())$NestedPromptLevel "
         }
 
         # ys has a counter for the number of commands run here, but I don't see the point of it
 
         # ***Exit Code***
-        $LeftStatus += if($CurrentExitCode -ne 0){ # Don't display the exit code if it is 0 (Success)
+        $LeftStatus += if ($CurrentExitCode -ne 0) {
+            # Don't display the exit code if it is 0 (Success)
             "$($Flavour.Text.Foreground())C:$($Flavour.Red.Foreground())$CurrentExitCode "
         } elseif (-not $?) {
             # If the last command failed, but the exit code is 0, display a question mark
@@ -333,8 +336,8 @@ function prompt {
 
         # ***Timestamp*** 
         $RightStatus += "$($Flavour.Surface2.Foreground())[" + 
-            "$($Flavour.Lavender.Foreground())$(Get-Date -Format "HH:mm:ss")" + 
-            "$($Flavour.Surface2.Foreground())] "
+        "$($Flavour.Lavender.Foreground())$(Get-Date -Format 'HH:mm:ss')" + 
+        "$($Flavour.Surface2.Foreground())] "
 
         # Since the right status is complete, trim the trailing space
         $RightStatus = $RightStatus.TrimEnd()
@@ -343,9 +346,9 @@ function prompt {
         # Pad the right side of the prompt right element so they appear on the right edge of the window
         # To determine the correct amount of padding we need to strip any ANSI escape sequences from the left and 
         # right status segments
-        $AnsiRegex = "\x1b\[[0-9;]*m"
-        $Padding = " " * ($Host.UI.RawUI.WindowSize.Width - (($LeftStatus -replace $AnsiRegex, "").Length + 
-            ($RightStatus -replace $AnsiRegex, "").Length))
+        $AnsiRegex = '\x1b\[[0-9;]*m'
+        $Padding = ' ' * ($Host.UI.RawUI.WindowSize.Width - (($LeftStatus -replace $AnsiRegex, '').Length + 
+            ($RightStatus -replace $AnsiRegex, '').Length))
 
         # --- End of Status Line ---
 
@@ -363,13 +366,14 @@ function prompt {
     # Determine the prompt character and colour based on the vi mode
     if ($global:ViCommandMode) {
         $PromptChar = $PromptIcons.Prompt.Command
-        $PromptColor = "Blue"
+        $PromptColor = 'Blue'
     } else {
         $PromptChar = $PromptIcons.Prompt.Insert
-        $PromptColor = "Green"
+        $PromptColor = 'Green'
     }
 
-    # Write the prompt character - Using -ForegroundColor instead of $PSStyle.Foreground because PSReadLine doesn't seem to like PSStyle
+    # Write the prompt character 
+    # Using -ForegroundColor instead of $PSStyle.Foreground because PSReadLine doesn't seem to like PSStyle
     Write-Host -Object $PromptChar -NoNewline -ForegroundColor $PromptColor
 
     # Tell PSReadLine what the prompt character is
@@ -392,10 +396,10 @@ function prompt {
 # Cursor: Blinking block for command mode, blinking line for insert mode
 function OnViModeChange {
     # Suppress the warning as the global variables updated below are basically parameters for the prompt function
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", 
-        Justification="Global variable is accessed from a different scope", Scope="Function")]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', 
+        Justification = 'Global variable is accessed from a different scope', Scope = 'Function')]
     param(
-        [Parameter(ValueFromRemainingArguments=$true)]
+        [Parameter(ValueFromRemainingArguments = $true)]
         [string]$Mode
     )
 
@@ -415,10 +419,10 @@ function OnViModeChange {
 # PSReadLine Options
 $PSReadLineOptions = @{
     # Don't alert errors visually/audibly
-    BellStyle = "None"
+    BellStyle                     = 'None'
 
     # Set colours
-    Colors = @{
+    Colors                        = @{
         # Largely based on the proposed Code Editor style guide in pr #1997 in the Catppuccin/Catppuccin repo
         # Emphasis, ListPrediction and ListPredictionSelected are inspired by the Catppuccin fzf theme
         
@@ -448,35 +452,35 @@ $PSReadLineOptions = @{
     }
 
     # Define string used as the continuation prompt
-    ContinuationPrompt = "> "
+    ContinuationPrompt            = '> '
 
     # Use vi-like command line editting
-    EditMode = "Vi"
+    EditMode                      = 'Vi'
 
     # Prompt Spans multiple lines, required because InvokePrompt is used in OnViModeChange to modify the prompt
     # Currently blank line -> status line -> prompt line
     # This value is updated in OnViModeChange
-    ExtraPromptLineCount = 1
+    ExtraPromptLineCount          = 1
 
     # Don't display duplicates in the history search
-    HistoryNoDuplicates = $true
+    HistoryNoDuplicates           = $true
 
     # Move cursor to the end of the line when searching command history
     HistorySearchCursorMovesToEnd = $true
 
     # Display history search results and plugin suggestions together
-    PredictionSource = "HistoryAndPlugin"
+    PredictionSource              = 'HistoryAndPlugin'
     
     # Render the predictions in a drop down list - use inline view in VSCode
-    PredictionViewStyle = if ($env:TERM_PROGRAM -eq 'vscode') { "InlineView" } else { "ListView" }
+    PredictionViewStyle           = if ($env:TERM_PROGRAM -eq 'vscode') { 'InlineView' } else { 'ListView' }
 
-    PromptText = "> "
+    PromptText                    = '> '
 
     # Run a function whenever the vi mode is changed
-    ViModeIndicator = "Script" 
+    ViModeIndicator               = 'Script' 
     
     # Define which function will be called when the vi mode is changed
-    ViModeChangeHandler = $Function:OnViModeChange
+    ViModeChangeHandler           = $Function:OnViModeChange
 }
 
 # Assign the above values
@@ -488,7 +492,7 @@ Set-PSReadLineOption @PSReadLineOptions
 <# PSStyle Options #>
 
 # Set the PSStyle options if PSStyle is available, i.e. if the PSVersion is 7.2 or greater
-if ($PSVersionTable.PSVersion.Major -gt 7 -or ($PSVersionTable.PSVersion.Major -eq 7 -and $PSVersionTable.PSVersion.Minor -ge 2)){
+if ($PSVersionTable.PSVersion.Major -gt 7 -or ($PSVersionTable.PSVersion.Major -eq 7 -and $PSVersionTable.PSVersion.Minor -ge 2)) {
 
     # If the terminal supports OSC indicators, use the OSC progress bar - I only know of Windows Terminal supporting this
     if ($env:WT_SESSION) {
@@ -496,13 +500,13 @@ if ($PSVersionTable.PSVersion.Major -gt 7 -or ($PSVersionTable.PSVersion.Major -
     }
 
     # Set the colours for the various formatting types
-    $PSStyle.Formatting.Debug        = $Flavour.Sky.Foreground()
-    $PSStyle.Formatting.Error        = $Flavour.Red.Foreground()
-    $PSStyle.Formatting.ErrorAccent  = $Flavour.Blue.Foreground()
+    $PSStyle.Formatting.Debug = $Flavour.Sky.Foreground()
+    $PSStyle.Formatting.Error = $Flavour.Red.Foreground()
+    $PSStyle.Formatting.ErrorAccent = $Flavour.Blue.Foreground()
     $PSStyle.Formatting.FormatAccent = $Flavour.Teal.Foreground()
-    $PSStyle.Formatting.TableHeader  = $Flavour.Rosewater.Foreground()
-    $PSStyle.Formatting.Verbose      = $Flavour.Yellow.Foreground()
-    $PSStyle.Formatting.Warning      = $Flavour.Peach.Foreground()
+    $PSStyle.Formatting.TableHeader = $Flavour.Rosewater.Foreground()
+    $PSStyle.Formatting.Verbose = $Flavour.Yellow.Foreground()
+    $PSStyle.Formatting.Warning = $Flavour.Peach.Foreground()
 }
 
 #############
@@ -511,16 +515,16 @@ if ($PSVersionTable.PSVersion.Major -gt 7 -or ($PSVersionTable.PSVersion.Major -
 
 # *** Terminal-Icons ***
 
-function Update-TerminalIconsTheme{
+function Update-TerminalIconsTheme {
     # Use Add-[x]Theme functions with -force to update the existing themes
-    Add-TerminalIconsColorTheme  $($env:OneDriveConsumer + '\.config\Terminal-Icons\colorThemes\personal-theme.psd1') -force
-    Add-TerminalIconsIconTheme $($env:OneDriveConsumer + '\.config\Terminal-Icons\iconThemes\personal-theme.psd1') -force
+    Add-TerminalIconsColorTheme $($env:OneDriveConsumer + '\.config\Terminal-Icons\colorThemes\personal-theme.psd1') -Force
+    Add-TerminalIconsIconTheme $($env:OneDriveConsumer + '\.config\Terminal-Icons\iconThemes\personal-theme.psd1') -Force
 
     # Apply the newly updated Themes
     Set-TerminalIconsTheme -ColorTheme personal-theme -IconTheme personal-theme
 }
 
-function Add-NewTerminalIcon{
+function Add-NewTerminalIcon {
     param(
         [Parameter(Mandatory)]
         [string]$Icon,
@@ -533,19 +537,19 @@ function Add-NewTerminalIcon{
 
     # Check if the icon is a valid glyph
     $glyphs = Invoke-Expression (Get-Content $($env:OneDriveConsumer + '\.config\Terminal-Icons\glyphs.ps1') | Out-String)
-    if(-Not ($glyphs.ContainsKey($Icon))){
-        Write-Host "Glyph not found." -ForegroundColor Red
+    if (-Not ($glyphs.ContainsKey($Icon))) {
+        Write-Host 'Glyph not found.' -ForegroundColor Red
         $valid = $false
     }
 
     # Check if the colour is in the correct format
-    if($Colour -notmatch '[0-9a-fA-F]{6}'){
-        Write-Host "Colour not in the correct format." -ForegroundColor Red
+    if ($Colour -notmatch '[0-9a-fA-F]{6}') {
+        Write-Host 'Colour not in the correct format.' -ForegroundColor Red
         $valid = $false
     }
 
     # Return if any of the above checks fail
-    if(-Not $valid){
+    if (-Not $valid) {
         return
     }
 
@@ -597,25 +601,25 @@ function Get-LastCommandDuration {
         $Duration = $LastCommand.EndExecutionTime - $LastCommand.StartExecutionTime
         
         # Don't do anything if the duration is less than the minimum seconds
-        if ($Duration.TotalSeconds -lt $MinimumSeconds) { return "" }
+        if ($Duration.TotalSeconds -lt $MinimumSeconds) { return '' }
 
         # Initialise the duration text
-        $DurationText = ""
+        $DurationText = ''
 
         # Format the time in the format: 1d 2h 3m 4s [5ms]
         # Where the parts are only included if they are greater than 0
-        if ($Duration.Days -gt 0) { $DurationText += "{0:N0}d" -f $Duration.Days }
-        if ($Duration.Hours -gt 0) { $DurationText += "{0:N0}h " -f $Duration.Hours }
-        if ($Duration.Minutes -gt 0) { $DurationText += "{0:N0}m " -f $Duration.Minutes }
-        if ($Duration.Seconds -gt 0) { $DurationText += "{0:N0}s " -f $Duration.Seconds }
-        if ($IncludeMilliseconds -and $Duration.Milliseconds -gt 0) { $DurationText += "{0:N0}ms" -f $Duration.Milliseconds }
+        if ($Duration.Days -gt 0) { $DurationText += '{0:N0}d' -f $Duration.Days }
+        if ($Duration.Hours -gt 0) { $DurationText += '{0:N0}h ' -f $Duration.Hours }
+        if ($Duration.Minutes -gt 0) { $DurationText += '{0:N0}m ' -f $Duration.Minutes }
+        if ($Duration.Seconds -gt 0) { $DurationText += '{0:N0}s ' -f $Duration.Seconds }
+        if ($IncludeMilliseconds -and $Duration.Milliseconds -gt 0) { $DurationText += '{0:N0}ms' -f $Duration.Milliseconds }
 
         # Return the formatted time, trimming any trailing space
         return $($DurationText.Trim())
     }
 }
 
-function Get-LocationFormatted{
+function Get-LocationFormatted {
     $Location = $(Get-Location).ToString()
 
     # Clean up the location string
@@ -634,7 +638,7 @@ function Get-LocationFormatted{
 
         # Add the first letter of each folder in the path
         for ($i = 1; $i -lt $SplitLocation.Length; $i++) {
-            $Location += $($SplitLocation[$i][0..($TruncateLength - 1)] -join "") + '\'
+            $Location += $($SplitLocation[$i][0..($TruncateLength - 1)] -join '') + '\'
         }
 
         # Add the last folder in the path
@@ -644,25 +648,25 @@ function Get-LocationFormatted{
     return $Location
 }
 
-function Invoke-FzfBat{
+function Invoke-FzfBat {
     fzf --preview 'bat --style=numbers --color=always --line-range :500 {}'
 }
 
-function Invoke-FzfTldr{
+function Invoke-FzfTldr {
     tldr -l | fzf --preview 'tldr {} --color=always -p=windows | bat --color=always --language=man --plain' --preview-window '50%,rounded,<50(up,85%,border-bottom)' --prompt='ﳁ TLDR >'
 }
 
-function Invoke-FzfES{
-    $es_args = ""
-    if($args.Count -gt 0){
+function Invoke-FzfES {
+    $es_args = ''
+    if ($args.Count -gt 0) {
         # If there are any args pass them directly on to es.exe
         $es_args = $args
-    }else{
+    } else {
         # Passing ES no args will list every file on the system which may take some time
         # So check if the user wants actually to do it
-        $confirm = Read-Host "Do you really want to search all files? (Y/N)"
+        $confirm = Read-Host 'Do you really want to search all files? (Y/N)'
 
-        if(-not $($($confirm -eq "Y") -or $($confirm -eq "y"))){
+        if (-not $($($confirm -eq 'Y') -or $($confirm -eq 'y'))) {
             return
         }
     }
@@ -674,12 +678,13 @@ function Invoke-FzfES{
 # List all updates available from WinGet
 # Filter out any packages that don't have a version number similar to how "winget upgrade" works
 function Get-WinGetUpdates {
-    Get-WinGetPackage | Where-Object {($_.Version -ne "Unknown") -and $_.IsUpdateAvailable} | Select-Object -Property Name, Id, Version, @{Name="Latest Version";Expression={$_.AvailableVersions[0]}}
+    Get-WinGetPackage | Where-Object { ($_.Version -ne 'Unknown') -and $_.IsUpdateAvailable } | Select-Object -Property Name, Id, Version, @{Name = 'Latest Version'; Expression = { $_.AvailableVersions[0] } }
 }
 
 # Function to reset the Last exit code on a clear screen
 function Clear-HostandExitCode {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseDeclaredVarsMoreThanAssignments", "", Justification="Global variable is accessed from a different scope")]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', 
+        Justification = 'Global variable is accessed from a different scope')]
     $global:IsFirstPrompt = $true # Reset this flag so that the blank line is not printed
     $global:LASTEXITCODE = 0
     Clear-Host
@@ -724,7 +729,7 @@ Set-Alias -Name sudo -Value gsudo # I'd rather use sudo than gsudo
 Set-Alias -Name su -Value gsudo # Shorter alias
 
 # Python - 32 bit for test scripts
-Set-Alias -Name py32 -Value $($env:LOCALAPPDATA + "\Programs\Python\Python37-32\python.exe")
+Set-Alias -Name py32 -Value $($env:LOCALAPPDATA + '\Programs\Python\Python37-32\python.exe')
 
 # Winget
 Set-Alias -Name wg -Value Winget # Shorter alias for cmd cli
@@ -736,9 +741,9 @@ Set-Alias -Name lg -Value lazygit
 # *** Visual Studio ***
 
 # Installed Visual Studio Versions
-Set-Alias -Name vs22 -Value "C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\devenv.exe" # 2022
-Set-Alias -Name vs19 -Value "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\Common7\IDE\devenv.exe" # 2019
-Set-Alias -Name vs17 -Value "C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\Common7\IDE\devenv.exe" # 2017
+Set-Alias -Name vs22 -Value 'C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\devenv.exe' # 2022
+Set-Alias -Name vs19 -Value 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\Common7\IDE\devenv.exe' # 2019
+Set-Alias -Name vs17 -Value 'C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\Common7\IDE\devenv.exe' # 2017
 
 # Cleaner alias for the latest version
 Set-Alias -Name vs -Value vs22
@@ -761,12 +766,12 @@ Set-Alias -Name cpc -Value Clear-FuzzyPackagesCache # clear the fuzzy package ca
 # Winget Argument Completer
 Register-ArgumentCompleter -Native -CommandName winget, wg -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
-        [Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.Utf8Encoding]::new()
-        $Local:word = $wordToComplete.Replace('"', '""')
-        $Local:ast = $commandAst.ToString().Replace('"', '""')
-        winget complete --word="$Local:word" --commandline "$Local:ast" --position $cursorPosition | ForEach-Object {
-            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
-        }
+    [Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.Utf8Encoding]::new()
+    $Local:word = $wordToComplete.Replace('"', '""')
+    $Local:ast = $commandAst.ToString().Replace('"', '""')
+    winget complete --word="$Local:word" --commandline "$Local:ast" --position $cursorPosition | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    }
 }
 
 <# Final Setup #>
