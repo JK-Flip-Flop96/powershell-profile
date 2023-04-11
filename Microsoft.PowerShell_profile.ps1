@@ -118,6 +118,12 @@ $ENV:FZF_DEFAULT_OPTS=@"
 --color=border:$($Flavour.Surface2)
 "@
 
+# --- Module Configuration --- #
+# The following variables are used to configure the modules
+
+# Enable the checking of stash status in Posh-Git
+$GitPromptSettings.EnableStashStatus = $true
+
 ################
 # Prompt Setup #
 ################
