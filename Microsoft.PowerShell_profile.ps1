@@ -614,7 +614,7 @@ function Get-LocationFormatted {
         $Location = $SplitLocation[0] + '\'
 
         # Add the first letter of each folder in the path
-        for ($i = 1; $i -lt $SplitLocation.Length; $i++) {
+        for ($i = 1; $i -lt $SplitLocation.Length - 1; $i++) {
             $Location += $($SplitLocation[$i][0..($TruncateLength - 1)] -join '') + '\'
         }
 
