@@ -120,6 +120,7 @@ $PromptIcons = @{
         Ahead       = '↑'
         Behind      = '↓'
         AheadBehind = '↕'
+        Same        = '='
         Stash       = '*'
     }
 
@@ -287,6 +288,8 @@ function prompt {
                 }
             } elseif ($status.BehindBy -gt 0) {
                 " $($Flavour.Red.Foreground())$($PromptIcons.Git.Behind)"
+            } else {
+                " $($Flavour.Sapphire.Foreground())$($PromptIcons.Git.Same)"
             }
 
             # Branch Status - Has stashed changes (*)
