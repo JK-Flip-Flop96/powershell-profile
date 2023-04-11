@@ -266,7 +266,7 @@ function prompt {
         if ($env:POSH_GIT_ENABLED -and ($status = Get-GitStatus -Force)) {
             # Branch Name
             $LeftStatus += "$($Flavour.Surface2.Foreground())on " +
-            "$($Flavour.Text.Foreground())git:$($Flavour.Teal.Foreground())$($status.Branch) "
+            "$($Flavour.Text.Foreground())git:$($Flavour.Sapphire.Foreground())$($status.Branch) "
             
             # Status section
             $LeftStatus += "$($Flavour.Surface2.Foreground())["
