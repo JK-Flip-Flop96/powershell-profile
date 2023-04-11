@@ -238,12 +238,17 @@ function prompt {
             # Branch Status - Ahead (↑) or Behind (↓) or Both (↕)
             if ($status.AheadBy -gt 0) {
                 if ($status.BehindBy -gt 0) {
-                    $LeftStatus += "$($Flavour.Yellow.Foreground())↕"
+                    $LeftStatus += " $($Flavour.Yellow.Foreground())↕"
                 } else {
-                    $LeftStatus += "$($Flavour.Green.Foreground())↑"
+                    $LeftStatus += " $($Flavour.Green.Foreground())↑"
                 }
             } elseif ($status.BehindBy -gt 0) {
-                $LeftStatus += "$($Flavour.Peach.Foreground())↓"
+                $LeftStatus += " $($Flavour.Peach.Foreground())↓"
+            }
+
+            # Branch Status - Has stashed changes (*)
+            if ($status.StashCount -gt 0) {
+                $LeftStatus += " $($Flavour.Sky.Foreground())*"
             }
 
             # End of Status section
