@@ -469,6 +469,7 @@ $PSReadLineOptions = @{
     # Render the predictions in a drop down list - use inline view in VSCode
     PredictionViewStyle           = if ($env:TERM_PROGRAM -eq 'vscode') { 'InlineView' } else { 'ListView' }
 
+    # This is likely to be changed before it's ever read by PSReadLine, but it's here just in case
     PromptText                    = '> '
 
     # Run a function whenever the vi mode is changed
