@@ -59,16 +59,17 @@ Import-Module Catppuccin
 
 # Zoxide
 try {
-    Invoke-Expression (& { # Zoxide intialisation is different for PowerShell 5 and 6+ 
-        $hook = if ($PSVersionTable.PSVersion.Major -lt 6) { 'prompt' } else { 'pwd' }
-        (zoxide init --hook $hook powershell | Out-String)
-    })
+    $Hook = if ($PSVersionTable.PSVersion.Major -lt 6) { 'prompt' } else { 'pwd' }
+    $ZoxideInit = zoxide init --hook $Hook powershell | Out-String
 
-    # If Zoxide is loaded and available replace "cd" with it
-    Set-Alias -Name cd -Value z -Option AllScope
-    Set-Alias -Name cdi -Value zi -Option AllScope # Interactive version of zoxide using fzf
+    Invoke-Expression (& { $ZoxideInit } ) 
+
+    $ZoxideLoaded = $true
 } catch {
-    # Do Nothing
+    $ZoxideLoaded = $false
+} finally {
+    # Clear the error if it is just a zoxide error
+    if ($Error.Count -eq 1 -and $Error[0].ToString().Contains("zoxide")) { $Error.Clear() }
 }
 
 <# Environment Variables #>
@@ -100,12 +101,6 @@ $IsFirstPrompt = $true
 
 # - Prompt Configuration -
 # The following variables are used to configure the prompt
-
-# Maximum length of the directory path as a percentage of the window width (0.30 = 30%)
-$MaxDirLengthPercent = 0.30
-
-# Length to which path segments are truncated, Must be >= 1
-$TruncateLength = 2
 
 # TODO: Create an ASCII only version of the following icons
 # Hashtable of icons to use for the prompt
@@ -264,7 +259,7 @@ function prompt {
         
         # ***Location***
         $LeftStatus += "$($Flavour.Surface2.Foreground())in " + 
-        "$($Flavour.Yellow.Foreground())$(Get-LocationFormatted) "
+        "$($Flavour.Yellow.Foreground())$(Get-LocationFormatted -TruncateLength 2) "
         
         # ***Git***
         # If the current directory is a git repository, display the current branch
@@ -513,50 +508,6 @@ if ($PSVersionTable.PSVersion.Major -gt 7 -or ($PSVersionTable.PSVersion.Major -
 # Functions #
 #############
 
-# *** Terminal-Icons ***
-
-function Update-TerminalIconsTheme {
-    # Use Add-[x]Theme functions with -force to update the existing themes
-    Add-TerminalIconsColorTheme $($env:OneDriveConsumer + '\.config\Terminal-Icons\colorThemes\personal-theme.psd1') -Force
-    Add-TerminalIconsIconTheme $($env:OneDriveConsumer + '\.config\Terminal-Icons\iconThemes\personal-theme.psd1') -Force
-
-    # Apply the newly updated Themes
-    Set-TerminalIconsTheme -ColorTheme personal-theme -IconTheme personal-theme
-}
-
-function Add-NewTerminalIcon {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Icon,
-
-        [Parameter(Mandatory)]
-        [string]$Colour
-    )
-
-    $valid = $true
-
-    # Check if the icon is a valid glyph
-    $glyphs = Invoke-Expression (Get-Content $($env:OneDriveConsumer + '\.config\Terminal-Icons\glyphs.ps1') | Out-String)
-    if (-Not ($glyphs.ContainsKey($Icon))) {
-        Write-Host 'Glyph not found.' -ForegroundColor Red
-        $valid = $false
-    }
-
-    # Check if the colour is in the correct format
-    if ($Colour -notmatch '[0-9a-fA-F]{6}') {
-        Write-Host 'Colour not in the correct format.' -ForegroundColor Red
-        $valid = $false
-    }
-
-    # Return if any of the above checks fail
-    if (-Not $valid) {
-        return
-    }
-
-    # Update the Icon theme to reflect the changes
-    Update-TerminalIconsTheme
-}
-
 # ***Alias Functions***
 
 # TODO: Change the below functions to allow pass through of parameters to Get-ChildItem
@@ -620,6 +571,26 @@ function Get-LastCommandDuration {
 }
 
 function Get-LocationFormatted {
+    <#
+    .SYNOPSIS
+        Returns the current location in a formatted string
+
+    .DESCRIPTION
+        Returns the current location in a formatted string. Intended to be printed in the prompt.
+
+        Shortens the path if it is too long, truncating each segment to $TruncateLength characters.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [ValidateRange(1, [int]::MaxValue)] # TruncateLength must be greater than 0
+        [int]$TruncateLength = 1,
+
+        [Parameter()]
+        [ValidateRange(0, 1)] # MaxDirLengthPercent must be between 0 and 1
+        [double]$MaxDirLengthPercent = 0.30
+    )
+
     $Location = $(Get-Location).ToString()
 
     # Clean up the location string
@@ -630,11 +601,13 @@ function Get-LocationFormatted {
     if ($Location.Length -gt ($Host.UI.RawUI.WindowSize.Width * $MaxDirLengthPercent)) {
         $SplitLocation = $Location.Split('\')
 
+        # If the path is only one segment long, return the full path (e.g. C:\ or ~)
+        if ($SplitLocation.Length -eq 1){
+            return $Location
+        }
+
         # First part of the path is always included, should be the drive letter or ~
         $Location = $SplitLocation[0] + '\'
-        
-        # The following step will have unintended consequences if $TruncateLength is less than 1
-        if ($TruncateLength -lt 1) { $TruncateLength = 1 }
 
         # Add the first letter of each folder in the path
         for ($i = 1; $i -lt $SplitLocation.Length; $i++) {
@@ -653,7 +626,8 @@ function Invoke-FzfBat {
 }
 
 function Invoke-FzfTldr {
-    tldr -l | fzf --preview 'tldr {} --color=always -p=windows | bat --color=always --language=man --plain' --preview-window '50%,rounded,<50(up,85%,border-bottom)' --prompt='ﳁ TLDR >'
+    tldr -l | fzf --preview 'tldr {} --color=always -p=windows | bat --color=always --language=man --plain' `
+                  --preview-window '50%,rounded,<50(up,85%,border-bottom)' --prompt='ﳁ TLDR >'
 }
 
 function Invoke-FzfES {
@@ -678,7 +652,9 @@ function Invoke-FzfES {
 # List all updates available from WinGet
 # Filter out any packages that don't have a version number similar to how "winget upgrade" works
 function Get-WinGetUpdates {
-    Get-WinGetPackage | Where-Object { ($_.Version -ne 'Unknown') -and $_.IsUpdateAvailable } | Select-Object -Property Name, Id, Version, @{Name = 'Latest Version'; Expression = { $_.AvailableVersions[0] } }
+    Get-WinGetPackage | 
+        Where-Object { ($_.Version -ne 'Unknown') -and $_.IsUpdateAvailable } |
+        Select-Object -Property Name, Id, Version, @{ Name = 'Latest Version'; Expression = { $_.AvailableVersions[0] } }
 }
 
 # Function to reset the Last exit code on a clear screen
@@ -706,6 +682,18 @@ function Edit-ProfileFolder {
 
 # *** Built in ***
 
+# Set-Location
+if ($ZoxideLoaded){
+    # If Zoxide is loaded and available replace "cd" with it
+    # This can be done safely because Zoxide will pass through to the original Set-Location when appropriate
+    Set-Alias -Name cd -Value z -Option AllScope
+    Set-Alias -Name sl -Value z -Option AllScope -Force # Force for read-only sl alias
+
+    # Interactive version of zoxide using fzf
+    Set-Alias -Name cdi -Value zi -Option AllScope
+    Set-Alias -Name sli -Value zi -Option AllScope
+}
+
 # Get-ChildItem
 Set-Alias -Name ls -Value Get-ChildItemUnixStyleShort # TODO: make this show less details - more like ls in bash
 Set-Alias -Name ll -Value Get-ChildItemUnixStyleLong # Should be similar to ls -l
@@ -728,8 +716,9 @@ Set-Alias -Name mk -Value New-Item # Similar to mkdir
 Set-Alias -Name sudo -Value gsudo # I'd rather use sudo than gsudo
 Set-Alias -Name su -Value gsudo # Shorter alias
 
-# Python - 32 bit for test scripts
-Set-Alias -Name py32 -Value $($env:LOCALAPPDATA + '\Programs\Python\Python37-32\python.exe')
+# Python
+Set-Alias -Name py -Value python # Default python
+Set-Alias -Name py32 -Value $($env:LOCALAPPDATA + '\Programs\Python\Python37-32\python.exe') # 32 bit python
 
 # Winget
 Set-Alias -Name wg -Value Winget # Shorter alias for cmd cli
