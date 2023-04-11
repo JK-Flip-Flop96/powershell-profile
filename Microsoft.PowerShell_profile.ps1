@@ -155,11 +155,24 @@ function prompt {
         I have also added an execution time to the prompt if the execution time is >= 5 seconds. This is placed at 
         the end of the prompt and is right aligned.
 
+        Git Status:
+        I have enhanced the git status to include more information. The git status is displayed in the following
+        format: 
+            
+            git:[branch] [[clean|dirty] [ahead|behind] [stash]].
+
+        Where:
+            branch - The current branch
+            clean/dirty - Whether the working directory is clean or dirty (o = clean, x = dirty)
+            ahead/behind - Whether the current branch is ahead or behind the remote (↑ = ahead, ↓ = behind)
+            stash - Whether there are stashed changes (* = stashed)
+        
+
         CURRENT FORMAT:
         [NewLine]
         Left Aligned  -> [Debug] [Privilege] [User] @ [Host] in [Directory] [on [GitBranch] [GitStatus]] 
-                      -> [Nesting Level] [Time] [ExitCode] 
-        Right Aligned -> [Execution Time (if >= 5s)] [NewLine]
+                      -> [Nesting Level] [ExitCode] 
+        Right Aligned -> [Execution Time (if >= 5s)] [Time] [NewLine]
         [Vi Mode/Prompt] 
     #>
 
