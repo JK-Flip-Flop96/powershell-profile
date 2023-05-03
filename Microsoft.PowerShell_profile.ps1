@@ -59,20 +59,30 @@ Import-Module Catppuccin
 
 # Zoxide
 try {
-    $Hook = if ($PSVersionTable.PSVersion.Major -lt 6) { 'prompt' } else { 'pwd' }
-    $ZoxideInit = zoxide init --hook $Hook powershell | Out-String
-
-    Invoke-Expression (& { $ZoxideInit } ) 
+    # Load zoxide into the current session
+    # This is a cut down version of the powershell init script from zoxide
+    # I don't need Windows Powershell support in this profile
+    Invoke-Expression (& { zoxide init --hook 'pwd' powershell | Out-String } ) 
 
     $ZoxideLoaded = $true
 } catch {
     $ZoxideLoaded = $false
 } finally {
     # Clear the error if it is just a zoxide error
-    if ($Error.Count -eq 1 -and $Error[0].ToString().Contains("zoxide")) { $Error.Clear() }
+    if ($Error.Count -eq 1 -and $Error[0].ToString().Contains('zoxide')) { $Error.Clear() }
 }
 
+# lf - A terminal file manager 
+# Powershell autocompletion
+. "$PSScriptRoot\Autocompletion\lf.ps1"
+
 <# Environment Variables #>
+
+# Set the default encoding to UTF-8
+$OutputEncoding = [console]::InputEncoding = [console]::OutputEncoding = New-Object System.Text.UTF8Encoding
+
+# Max the history size to 2^15 - 1. Who gives a fuck about disk space? I don't
+$MaximumHistoryCount = 32767
 
 <# Globals #>
 # Determine if the current user has elevated privileges
@@ -87,7 +97,7 @@ $ViCommandMode = $false  # Default to insert mode
 
 # - Cached Values -
 # Cached version of the first two lines of the prompt, used to redraw the prompt when the vi mode is changed
-$CurrentPrompt = $null
+$CurrentPrompt = $null # Default to null so that a fresh prompt will always be calculated at startup
 
 # Width is checked to see if the window has been resized, if it has the prompt is recalculated
 $LastHostWidth = $Host.UI.RawUI.WindowSize.Width 
@@ -95,9 +105,6 @@ $LastHostWidth = $Host.UI.RawUI.WindowSize.Width
 # - Flags - 
 # Set by OnViModeChange to prevent the prompt from being recalculated when the vi mode is changed
 $IsPromptRedraw = $false
-
-# Used to determine if the prompt is being drawn for the first time
-$IsFirstPrompt = $true
 
 # - Prompt Configuration -
 # The following variables are used to configure the prompt
@@ -110,8 +117,8 @@ $PromptIcons = @{
     Debug  = '!'
 
     # User type icons
-    Admin  = '%'
-    User   = '#'
+    Admin  = '#'
+    User   = '$'
 
     # Git status icons
     Git    = @{
@@ -217,9 +224,8 @@ function prompt {
 
         # --- Start Prompt ---
 
-        # If the prompt follows another prompt, add a blank line to separate them
-        if ($global:IsFirstPrompt) {
-            $global:IsFirstPrompt = $false
+        # If the prompt is being drawn at the top of screen, omit the blank line
+        if ($Host.UI.RawUI.CursorPosition.Y -eq 0) {
             $BlankLine = '' 
             Set-PSReadLineOption -ExtraPromptLineCount 1
         } else {
@@ -279,7 +285,7 @@ function prompt {
                 "$($Flavour.Green.Foreground())$($PromptIcons.Git.Clean)"
             }
 
-            # Branch Status - Ahead (↑) or Behind (↓) or Both (↕)
+            # Branch Status - Ahead (↑) or Behind (↓) or Both (↕) or Same (=)
             $LeftStatus += if ($status.AheadBy -gt 0) {
                 if ($status.BehindBy -gt 0) {
                     " $($Flavour.Yellow.Foreground())$($PromptIcons.Git.AheadBehind)"
@@ -466,6 +472,9 @@ $PSReadLineOptions = @{
     # Move cursor to the end of the line when searching command history
     HistorySearchCursorMovesToEnd = $true
 
+    # Increase the number of history items stored
+    MaximumHistoryCount           = $MaximumHistoryCount # I think it does this by default, but just in case
+
     # Display history search results and plugin suggestions together
     PredictionSource              = 'HistoryAndPlugin'
     
@@ -529,7 +538,7 @@ function Get-ChildItemUnixStyleShort {
 
 # Function for listing all the functions
 function Get-ChildItemFunctions {
-    Get-ChildItem Functions:\
+    Get-ChildItem Function:\
 }
 
 # Function for listing all the aliases
@@ -583,6 +592,8 @@ function Get-LocationFormatted {
         Returns the current location in a formatted string. Intended to be printed in the prompt.
 
         Shortens the path if it is too long, truncating each segment to $TruncateLength characters.
+
+        The Current Directory is always displayed in full and in bold.
     #>
     [CmdletBinding()]
     param(
@@ -606,23 +617,32 @@ function Get-LocationFormatted {
         $SplitLocation = $Location.Split('\')
 
         # If the path is only one segment long, return the full path (e.g. C:\ or ~)
-        if ($SplitLocation.Length -eq 1){
+        if ($SplitLocation.Length -eq 1) {
             return $Location
         }
 
         # First part of the path is always included, should be the drive letter or ~
         $Location = $SplitLocation[0] + '\'
 
-        # Add the first letter of each folder in the path
+        # Add the $TruncateLength letters of each folder in the path
         for ($i = 1; $i -lt $SplitLocation.Length - 1; $i++) {
             $Location += $($SplitLocation[$i][0..($TruncateLength - 1)] -join '') + '\'
         }
 
-        # Add the last folder in the path
-        $Location += $SplitLocation[-1]
+        # Add the last folder in the path in bold
+        $Location += $PSStyle.Bold + $SplitLocation[-1] + $PSStyle.BoldOff
+    } else {
+        # If the path is short enough, just bold the last folder
+        $Index = $Location.LastIndexOf('\')
+        $Location = $Location.Substring(0, $Index + 1) + 
+        $PSStyle.Bold + $Location.Substring($Index + 1) + $PSStyle.BoldOff
     }
 
     return $Location
+}
+
+function Invoke-HexylBat {
+    hexyl.exe $args --terminal-width=$($Host.UI.RawUI.WindowSize.Width) | bat.exe --color=always --plain
 }
 
 function Invoke-FzfBat {
@@ -631,7 +651,7 @@ function Invoke-FzfBat {
 
 function Invoke-FzfTldr {
     tldr -l | fzf --preview 'tldr {} --color=always -p=windows | bat --color=always --language=man --plain' `
-                  --preview-window '50%,rounded,<50(up,85%,border-bottom)' --prompt='ﳁ TLDR >'
+        --preview-window '50%,rounded,<50(up,85%,border-bottom)' --prompt='ﳁ TLDR >'
 }
 
 function Invoke-FzfES {
@@ -641,7 +661,7 @@ function Invoke-FzfES {
         $es_args = $args
     } else {
         # Passing ES no args will list every file on the system which may take some time
-        # So check if the user wants actually to do it
+        # So check if the user wants to do it
         $confirm = Read-Host 'Do you really want to search all files? (Y/N)'
 
         if (-not $($($confirm -eq 'Y') -or $($confirm -eq 'y'))) {
@@ -651,6 +671,16 @@ function Invoke-FzfES {
 
     # Invoke es and pipe it to fzf
     es $es_args | fzf --preview 'bat --style=numbers --color=always --line-range :500 {}' --prompt=' ES >'
+}
+
+function Find-File ($Name) {
+    <# 
+    .SYNOPSIS
+        Similar to unix find command
+    #>
+    Get-ChildItem -Recurse -Filter "*${Name}*" -ErrorAction SilentlyContinue | ForEach-Object {
+        Write-Output $_.FullName
+    }
 }
 
 # List all updates available from WinGet
@@ -663,12 +693,11 @@ function Get-WinGetUpdates {
 
 # Function to reset the Last exit code on a clear screen
 function Clear-HostandExitCode {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', 
-        Justification = 'Global variable is accessed from a different scope')]
-    $global:IsFirstPrompt = $true # Reset this flag so that the blank line is not printed
     $global:LASTEXITCODE = 0
     Clear-Host
 }
+
+# *** Profile Maniuplation ***
 
 # Function to open the current profile in VSCode
 function Edit-Profile {
@@ -680,6 +709,57 @@ function Edit-ProfileFolder {
     code $PSScriptRoot
 }
 
+# Function to reload the current profile
+function Invoke-Profile {
+    & $PROFILE
+}
+
+# *** Window Maniuplation ***
+
+# Set the window title 
+function Set-WindowTitle {
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [string]$Title = 'PowerShell',
+
+        # If true, the new title will be prepended to the current title
+        [switch]$Prepend 
+    )
+    process {
+        $Host.UI.RawUI.WindowTitle = $Title + $( if ($Prepend) { ' - ' + $Host.UI.RawUI.WindowTitle } )
+    }
+}
+
+function Reset-WindowTitle {
+    Set-WindowTitle # No args will reset the title to the default
+}
+
+# *** System Maniuplation ***
+
+# -- wrapper functions for shutdown.exe --
+function Stop-System {
+    # Shutdown the system by calling the shutdown.exe command
+    shutdown.exe /s /t 0
+}
+
+function Restart-System {
+    # Restart the system by calling the shutdown.exe command
+    shutdown.exe /r /t 0
+}
+
+function Disconnect-UserSession {
+    # Log off the current user by calling the shutdown.exe command
+    shutdown.exe /l /t 0
+}
+
+function Lock-System {
+    # Lock the system by calling the LockWorkStation function
+    rundll32.exe user32.dll, LockWorkStation
+}
+
+
+
 ###########
 # Aliases #
 ###########
@@ -687,7 +767,7 @@ function Edit-ProfileFolder {
 # *** Built in ***
 
 # Set-Location
-if ($ZoxideLoaded){
+if ($ZoxideLoaded) {
     # If Zoxide is loaded and available replace "cd" with it
     # This can be done safely because Zoxide will pass through to the original Set-Location when appropriate
     Set-Alias -Name cd -Value z -Option AllScope
@@ -703,7 +783,7 @@ Set-Alias -Name ls -Value Get-ChildItemUnixStyleShort # TODO: make this show les
 Set-Alias -Name ll -Value Get-ChildItemUnixStyleLong # Should be similar to ls -l
 
 # Get-ChilItem for non-filesystem items
-Set-Alias -Name lf -Value Get-ChildItemFunctions # List all functions
+Set-Alias -Name lfn -Value Get-ChildItemFunctions # List all functions - changed to prevent confict with lf.exe
 Set-Alias -Name la -Value Get-ChildItemAliases # List all aliases
 
 # Clear-Host
@@ -713,6 +793,15 @@ Set-Alias -Name cl -Value Clear-HostandExitCode # Shorter alias
 
 # New-Item
 Set-Alias -Name mk -Value New-Item # Similar to mkdir
+
+# *** Custom Functions ***
+
+# Find-File
+Set-Alias -Name find -Value Find-File # Similar to unix find command [HIDES FIND.EXE]
+
+# Set-WindowTitle and Reset-WindowTitle
+Set-Alias -Name swt -Value Set-WindowTitle # Set the window title
+Set-Alias -Name rwt -Value Reset-WindowTitle # Reset the window title
 
 # *** External Programs ***
 
@@ -734,6 +823,7 @@ Set-Alias -Name lg -Value lazygit
 # *** Visual Studio ***
 
 # Installed Visual Studio Versions
+Set-Alias -Name vs22p -Value 'C:\Program Files\Microsoft Visual Studio\2022\Preview\Common7\IDE\devenv.exe' # 2022 Preview
 Set-Alias -Name vs22 -Value 'C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\devenv.exe' # 2022
 Set-Alias -Name vs19 -Value 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\Common7\IDE\devenv.exe' # 2019
 Set-Alias -Name vs17 -Value 'C:\Program Files (x86)\Microsoft Visual Studio\2017\Professional\Common7\IDE\devenv.exe' # 2017
@@ -748,11 +838,8 @@ Set-Alias -Name fzfp -Value Invoke-FzfBat # fuzzy bat preview
 Set-Alias -Name fzft -Value Invoke-FzfTldr # fuzzy tldr
 Set-Alias -Name fzfe -Value Invoke-FzfES # fuzzy es
 
-# Fuzzy package manager aliases
-Set-Alias -Name fpi -Value Invoke-FuzzyPackageInstall # fuzzy package install
-Set-Alias -Name fpr -Value Invoke-FuzzyPackageUninstall # fuzzy package uninstall (remove)
-Set-Alias -Name fpu -Value Invoke-FuzzyPackageUpdate # fuzzy package update
-Set-Alias -Name cpc -Value Clear-FuzzyPackagesCache # clear the fuzzy package cache
+# *** Bat/Hexyl ***
+Set-Alias -Name hb -Value Invoke-HexylBat # Hexyl piped into bat for paging. hb for hexyl bat
 
 <# Argument Compeleters #>
 
@@ -769,6 +856,11 @@ Register-ArgumentCompleter -Native -CommandName winget, wg -ScriptBlock {
 
 <# Final Setup #>
 # Steps that must be completed after the rest of the profile has been processed
+
+# *** Style ***
+
+# Set the window title to the format [Admin:] PowerShell [Version]
+Set-WindowTitle $('{0}PowerShell {1}' -f $(if ($IsAdminSession) { 'Admin: ' }), $PSVersionTable.PSVersion.ToString())
 
 # ***Variables***
 
