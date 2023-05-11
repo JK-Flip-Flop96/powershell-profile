@@ -526,14 +526,124 @@ if ($PSVersionTable.PSVersion.Major -gt 7 -or ($PSVersionTable.PSVersion.Major -
 # TODO: Change the below functions to allow pass through of parameters to Get-ChildItem
 # NOTE: But I'm not doing it now because I can't fucking figure this shit out
 
+# shit
+function Get-ChildItemUnixStyle {
+    [CmdletBinding()]
+    param(
+        # --- Normal Parameters ---
+        # The following parameters are identical to their Get-ChildItem Exquivalents
+        [Parameter(Position = 0)]
+        [string[]]$Path,
+
+        [Parameter(Position = 1)]
+        [string]$Filter,
+
+        [string[]]$Include,
+
+        [string[]]$Exclude,
+
+        [switch]$Recurse,
+
+        [uint]$Depth,
+
+        [switch]$Force,
+
+        [switch]$Name,
+
+        # --- Extra Parameters ---
+
+        # If not set the extra exclude parameters are added. Functionally similar to ls -a
+        [switch]$All
+    )
+
+    if (-not $All) {
+        $Exclude += @('_*', '.*', '#*', '$*')
+    } 
+
+    # If -Recurse is set and -Depth is 0 then max -Depth so -Recurse will operate properly
+    if ($Recurse -and $Depth -eq 0) {
+        $Depth = [uint]::MaxValue
+    }
+
+    # Splatting Hashtable
+    $GCIArgs = @{
+        'Path'    = $Path
+        'Filter'  = $Filter
+        'Include' = $Include
+        'Exclude' = $Exclude
+        'Recurse' = $Recurse
+        'Depth'   = $Depth
+        'Force'   = $Force
+        'Name'    = $Name
+    }
+
+    Get-ChildItem @GCIArgs | Sort-Object { $_.GetType() }, Name
+}
+
 # Make ll more like unix ls -l
 function Get-ChildItemUnixStyleLong {
-    Get-ChildItem -Exclude '_*', '.*', '#*', '$*' | Sort-Object { $_.GetType() }, Name | Format-Table -AutoSize
+    Get-ChildItemUnixStyle @args | Format-Table -AutoSize 
 }
 
 # Make ls more like unix ls
 function Get-ChildItemUnixStyleShort {
-    Get-ChildItem -Exclude '_*', '.*', '#*', '$*' | Sort-Object { $_.GetType() }, Name | Format-Wide -AutoSize
+    Get-ChildItemUnixStyle @args | Format-Wide -AutoSize
+}
+
+# Make lla more like unix ls -la
+function Get-ChildItemUnixStyleLongAll {
+    # Ensure the args don't contain -All.
+    $filteredArgs = $args | Where-Object { $_ -notmatch '-[aA][lL]{0,2}' }
+    Get-ChildItemUnixStyleLong @filteredArgs -All
+}
+
+# Make la more like unix ls -a
+function Get-ChildItemUnixStyleShortAll {
+    # Ensure the args don't contain -All. 
+    $filteredArgs = $args | Where-Object { $_ -notmatch '-[aA][lL]{0,2}' } 
+    Get-ChildItemUnixStyleShort @filteredArgs -All
+}
+
+function Get-Tree {
+    [CmdletBinding()]
+    param (
+        [Parameter(Position = 0)]
+        [ValidateScript({ Test-Path $_ -PathType Container })]
+        [string]$Path = $PWD.Path,
+        [Parameter(Position = 1)]
+        [int]$IndentLevel = 0,
+        [Parameter(Position = 2)]
+        [string]$IndentString = ''
+    )
+    if ($IndentLevel -eq 0) {
+        Write-Host ' .' -ForegroundColor Blue
+    }
+
+    $Groups = Get-ChildItem $Path | Group-Object -Property { $_.PSIsContainer }
+
+    $Directories = $Groups | Where-Object { $_.Name -eq $true } | Select-Object -ExpandProperty Group
+    $Files = $Groups | Where-Object { $_.Name -eq $false } | Select-Object -ExpandProperty Group
+
+    foreach ($Directory in $Directories) {
+        $IconText = ($Directory | Format-TerminalIcons) -replace '(.*?)  (.*)', '$1 $2'
+        if ($Directory -eq $Directories[-1] -and !$Files) {
+            Write-Host "$IndentString└─ $IconText"
+            Get-Tree $Directory.FullName ($IndentLevel + 1) ($IndentString + '   ')
+        } else {
+            Write-Host "$IndentString├─ $IconText"
+            Get-Tree $Directory.FullName ($IndentLevel + 1) ($IndentString + '│  ')
+        }
+    }
+    
+    foreach ($File in $Files) {
+        $IconText = ($File | Format-TerminalIcons) -replace '(.*?)  (.*)', '$1 $2'
+        if ($File -eq $Files[-1]) {
+            Write-Host "$IndentString└─ $IconText"
+        } else {
+            Write-Host "$IndentString├─ $IconText"
+        }
+    }
+    
 }
 
 # Function for listing all the functions
@@ -779,12 +889,18 @@ if ($ZoxideLoaded) {
 }
 
 # Get-ChildItem
-Set-Alias -Name ls -Value Get-ChildItemUnixStyleShort # TODO: make this show less details - more like ls in bash
-Set-Alias -Name ll -Value Get-ChildItemUnixStyleLong # Should be similar to ls -l
+Set-Alias -Name ls -Value Get-ChildItemUnixStyleShort # Like ls
+Set-Alias -Name ll -Value Get-ChildItemUnixStyleLong # Like ls -l
 
-# Get-ChilItem for non-filesystem items
-Set-Alias -Name lfn -Value Get-ChildItemFunctions # List all functions - changed to prevent confict with lf.exe
-Set-Alias -Name la -Value Get-ChildItemAliases # List all aliases
+Set-Alias -Name la -Value Get-ChildItemUnixStyleShortAll # Like ls -a
+Set-Alias -Name lla -Value Get-ChildItemUnixStyleLongAll # Like ls -la
+
+Set-Alias -Name lt -Value Get-ChildItemTree # Like exa --tree
+Set-Alias -Name lta -Value Get-ChildItemTreeAll # Like exa --tree --all
+
+# Get-ChildItem for non-filesystem items
+Set-Alias -Name gfns -Value Get-ChildItemFunctions # List all functions
+Set-Alias -Name gals -Value Get-ChildItemAliases # List all aliases
 
 # Clear-Host
 Set-Alias -Name clear -Value Clear-HostandExitCode # Reset the exit code on clear
