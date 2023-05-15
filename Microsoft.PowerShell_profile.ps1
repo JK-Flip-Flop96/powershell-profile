@@ -1,4 +1,11 @@
 ################
+# Profile Args #
+################
+
+# Set to true to force the the use of ASCII characters in the prompt
+$global:UseAscii = $false
+
+################
 # Module Setup #
 ################
 
@@ -109,32 +116,60 @@ $IsPromptRedraw = $false
 # - Prompt Configuration -
 # The following variables are used to configure the prompt
 
-# TODO: Create an ASCII only version of the following icons
 # Hashtable of icons to use for the prompt
-$PromptIcons = @{
-    
-    # Debug icon
-    Debug  = '!'
+$PromptIcons = if (-not $global:UseAscii) {
+    # Unicode icons - Still largely ASCII compatible
+    @{
+        # Debug icon
+        Debug  = '!'
 
-    # User type icons
-    Admin  = '#'
-    User   = '$'
+        # User type icons
+        Admin  = '#'
+        User   = '$'
 
-    # Git status icons
-    Git    = @{
-        Clean       = 'o'
-        Dirty       = 'x'
-        Ahead       = '↑'
-        Behind      = '↓'
-        AheadBehind = '↕'
-        Same        = '='
-        Stash       = '*'
+        # Git status icons
+        Git    = @{
+            Clean       = 'o'
+            Dirty       = 'x'
+            Ahead       = '↑'
+            Behind      = '↓'
+            AheadBehind = '↕'
+            Same        = '='
+            Stash       = '*'
+        }
+
+        # Mode dependant prompt icons
+        Prompt = @{
+            Insert  = '>'
+            Command = '<'
+        }
     }
+} else {
+    # ASCII only icons
+    @{    
+        # Debug icon
+        Debug  = '!'
 
-    # Mode dependant prompt icons
-    Prompt = @{
-        Insert  = '>'
-        Command = '<'
+        # User type icons
+        Admin  = '#'
+        User   = '$'
+
+        # Git status icons
+        Git    = @{
+            Clean       = 'o'
+            Dirty       = 'x'
+            Ahead       = '>'
+            Behind      = '<'
+            AheadBehind = '<>'
+            Same        = '='
+            Stash       = '*'
+        }
+
+        # Mode dependant prompt icons
+        Prompt = @{
+            Insert  = '>'
+            Command = '<'
+        }
     }
 }
 
@@ -523,10 +558,7 @@ if ($PSVersionTable.PSVersion.Major -gt 7 -or ($PSVersionTable.PSVersion.Major -
 
 # ***Alias Functions***
 
-# TODO: Change the below functions to allow pass through of parameters to Get-ChildItem
-# NOTE: But I'm not doing it now because I can't fucking figure this shit out
-
-# shit
+# NOTE: This is good now
 function Get-ChildItemUnixStyle {
     [CmdletBinding()]
     param(
@@ -557,6 +589,10 @@ function Get-ChildItemUnixStyle {
     )
 
     if (-not $All) {
+        # Add the extra exclude parameters
+        # _* is for windows hidden files - Not common but I've seen it
+        # .* is for unix hidden files - The gold standard
+        # #* and $* are for the decoy files created by Carbon Black
         $Exclude += @('_*', '.*', '#*', '$*')
     } 
 
@@ -577,6 +613,7 @@ function Get-ChildItemUnixStyle {
         'Name'    = $Name
     }
 
+    # Sort by type then name becuase I think exclude can mess with the default sort order, which this restores
     Get-ChildItem @GCIArgs | Sort-Object { $_.GetType() }, Name
 }
 
@@ -606,45 +643,68 @@ function Get-ChildItemUnixStyleShortAll {
 
 function Get-Tree {
     [CmdletBinding()]
-    param (
+    param(
         [Parameter(Position = 0)]
         [ValidateScript({ Test-Path $_ -PathType Container })]
+        # The path to get the tree of
         [string]$Path = $PWD.Path,
-        [Parameter(Position = 1)]
-        [int]$IndentLevel = 0,
-        [Parameter(Position = 2)]
-        [string]$IndentString = ''
+
+        [Alias('f')] # Alias so that it's similar to tree /F
+        [Parameter()]
+        # Include files in the output
+        [switch]$IncludeFiles
     )
-    if ($IndentLevel -eq 0) {
-        Write-Host ' .' -ForegroundColor Blue
-    }
 
-    $Groups = Get-ChildItem $Path | Group-Object -Property { $_.PSIsContainer }
+    # Define the recursive function
+    function Get-TreeRecursor($Path, $IndentString, $GetFiles) {
+        # Get the contents of the path
+        $Directories = Get-ChildItem -Directory $Path
 
-    $Directories = $Groups | Where-Object { $_.Name -eq $true } | Select-Object -ExpandProperty Group
-    $Files = $Groups | Where-Object { $_.Name -eq $false } | Select-Object -ExpandProperty Group
-
-    foreach ($Directory in $Directories) {
-        $IconText = ($Directory | Format-TerminalIcons) -replace '(.*?)  (.*)', '$1 $2'
-        if ($Directory -eq $Directories[-1] -and !$Files) {
-            Write-Host "$IndentString└─ $IconText"
-            Get-Tree $Directory.FullName ($IndentLevel + 1) ($IndentString + '   ')
+        # If the -IncludeFiles switch is set, include files in the output
+        if ($GetFiles) {
+            $Files = Get-ChildItem -File $Path
         } else {
-            Write-Host "$IndentString├─ $IconText"
-            Get-Tree $Directory.FullName ($IndentLevel + 1) ($IndentString + '│  ')
+            $Files = @()
+        }
+
+        # Directories first
+        foreach ($Directory in $Directories) {
+            # Get the icon from TerminalIcons - strip one of the spaces after the icon
+            $IconText = ($Directory | Format-TerminalIcons) -replace '(.*?)  (.*)', '$1 $2'
+            
+            # If the directory is the last directory and there are no files, print a closing icon
+            if ($Directory -eq $Directories[-1] -and !$Files) {
+                # Print the indent string, the pointer line icon and the directory name
+                Write-Output "$IndentString└─ $IconText"
+    
+                # Call the function recursively to print the contents of the directory
+                Get-TreeRecursor $Directory.FullName ($IndentString + '   ') $GetFiles
+            } else {
+                # Otherwise print a t-junction icon
+                Write-Output "$IndentString├─ $IconText"
+                Get-TreeRecursor $Directory.FullName ($IndentString + '│  ') $GetFiles
+            }
+        }
+        
+        # Then files - As above
+        foreach ($File in $Files) {
+            $IconText = ($File | Format-TerminalIcons) -replace '(.*?)  (.*)', '$1 $2'
+            if ($File -eq $Files[-1]) {
+                Write-Output "$IndentString└─ $IconText"
+            } else {
+                Write-Output "$IndentString├─ $IconText"
+            }
         }
     }
-    
-    foreach ($File in $Files) {
-        $IconText = ($File | Format-TerminalIcons) -replace '(.*?)  (.*)', '$1 $2'
-        if ($File -eq $Files[-1]) {
-            Write-Host "$IndentString└─ $IconText"
-        } else {
-            Write-Host "$IndentString├─ $IconText"
-        }
-    }
-    
+
+    # Write then name and icon of the root directory
+    Write-Output "`n$((Get-Item $Path | Format-TerminalIcons) -replace '(.*?)  (.*)', '$1 $2')"
+
+    # Call the recursive function
+    Get-TreeRecursor $Path '' $IncludeFiles
 }
+
+
 
 # Function for listing all the functions
 function Get-ChildItemFunctions {
@@ -895,8 +955,7 @@ Set-Alias -Name ll -Value Get-ChildItemUnixStyleLong # Like ls -l
 Set-Alias -Name la -Value Get-ChildItemUnixStyleShortAll # Like ls -a
 Set-Alias -Name lla -Value Get-ChildItemUnixStyleLongAll # Like ls -la
 
-Set-Alias -Name lt -Value Get-ChildItemTree # Like exa --tree
-Set-Alias -Name lta -Value Get-ChildItemTreeAll # Like exa --tree --all
+Set-Alias -Name lt -Value Get-Tree # Like exa --tree
 
 # Get-ChildItem for non-filesystem items
 Set-Alias -Name gfns -Value Get-ChildItemFunctions # List all functions
