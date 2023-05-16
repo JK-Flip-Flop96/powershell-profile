@@ -89,9 +89,16 @@ try {
     if ($Error.Count -eq 1 -and $Error[0].ToString().Contains('zoxide')) { $Error.Clear() }
 }
 
-
-
 <# Environment Variables #>
+
+# Set the default editor to micro if it is installed
+if (Get-Command -Name micro -ErrorAction SilentlyContinue) {
+    $ENV:VISUAL = "$($script:ScoopHome)\apps\micro\current\micro.exe"
+    $ENV:EDITOR = $ENV:VISUAL
+
+    # -- Micro Settings --
+    $ENV:MICRO_TRUECOLOR = '1' # Enable true color support in micro
+}
 
 # Set the default encoding to UTF-8
 $OutputEncoding = [console]::InputEncoding = [console]::OutputEncoding = New-Object System.Text.UTF8Encoding
