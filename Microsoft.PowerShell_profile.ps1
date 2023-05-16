@@ -26,6 +26,9 @@ $script:ScoopHome = $($(Get-Item $(Get-Command scoop.ps1).Path).Directory.Parent
 # PSReadLine
 Import-Module -Name PSReadLine
 
+# Source all of the scripts in the Autocompletion directory
+Get-ChildItem -Path $PSScriptRoot\Autocompletion\*.ps1 | ForEach-Object { . $_.FullName }
+
 # Load the CompletionPredictor module if PSVersion is 7.2 or higher
 if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 2) {
     Import-Module -Name CompletionPredictor
@@ -86,8 +89,7 @@ try {
     if ($Error.Count -eq 1 -and $Error[0].ToString().Contains('zoxide')) { $Error.Clear() }
 }
 
-# Source all of the scripts in the Autocompletion directory
-Get-ChildItem -Path $PSScriptRoot\Autocompletion\*.ps1 | ForEach-Object { . $_.FullName }
+
 
 <# Environment Variables #>
 
