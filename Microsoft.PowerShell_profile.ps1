@@ -1,9 +1,16 @@
 ################
 # Profile Args #
 ################
+<# 
+    The following variables are used to configure the profile for different environments
+    These are to be set by the user in their profile
+#>
 
 # Set to true to force the the use of ASCII characters in the prompt
-$global:UseAscii = $false
+$script:UseAscii = $false
+
+# Flavour of Catppucin to use
+$script:CatppuccinFlavour = 'Mocha'
 
 ################
 # Module Setup #
@@ -12,7 +19,7 @@ $global:UseAscii = $false
 # Variables required for importing modules
 
 # Path to Scoop's installation directory
-$ScoopHome = $($(Get-Item $(Get-Command scoop.ps1).Path).Directory.Parent.FullName)
+$script:ScoopHome = $($(Get-Item $(Get-Command scoop.ps1).Path).Directory.Parent.FullName)
 
 # *** Function Modules ***
 
@@ -79,9 +86,8 @@ try {
     if ($Error.Count -eq 1 -and $Error[0].ToString().Contains('zoxide')) { $Error.Clear() }
 }
 
-# lf - A terminal file manager 
-# Powershell autocompletion
-. "$PSScriptRoot\Autocompletion\lf.ps1"
+# Source all of the scripts in the Autocompletion directory
+Get-ChildItem -Path $PSScriptRoot\Autocompletion\*.ps1 | ForEach-Object { . $_.FullName }
 
 <# Environment Variables #>
 
@@ -118,7 +124,7 @@ $IsPromptRedraw = $false
 
 # Hashtable of icons to use for the prompt
 $PromptIcons = if (-not $global:UseAscii) {
-    # Unicode icons - Still largely ASCII compatible
+    # Unicode icons - avoids nerd fonts for now
     @{
         # Debug icon
         Debug  = '!'
@@ -174,15 +180,15 @@ $PromptIcons = if (-not $global:UseAscii) {
 }
 
 # --- Colour Globals --- #
-$Flavour = $Catppuccin['Mocha']
+$global:Flavour = $Catppuccin[$script:CatppuccinFlavour]
 
 # FZF Colours - Reimplementation and extension of the Catppuccin theme from https://github.com/catppuccin/fzf
 $ENV:FZF_DEFAULT_OPTS = @"
---color=bg+:$($Flavour.Surface0),bg:$($Flavour.Base),spinner:$($Flavour.Rosewater)
---color=hl:$($Flavour.Red),fg:$($Flavour.Text),header:$($Flavour.Red)
---color=info:$($Flavour.Mauve),pointer:$($Flavour.Rosewater.Hex()),marker:$($Flavour.Rosewater)
---color=fg+:$($Flavour.Text),prompt:$($Flavour.Mauve),hl+:$($Flavour.Red)
---color=border:$($Flavour.Surface2)
+--color=bg+:$($global:Flavour.Surface0),bg:$($global:Flavour.Base),spinner:$($global:Flavour.Rosewater)
+--color=hl:$($global:Flavour.Red),fg:$($global:Flavour.Text),header:$($global:Flavour.Red)
+--color=info:$($global:Flavour.Mauve),pointer:$($global:Flavour.Rosewater),marker:$($global:Flavour.Rosewater)
+--color=fg+:$($global:Flavour.Text),prompt:$($global:Flavour.Mauve),hl+:$($global:Flavour.Red)
+--color=border:$($global:Flavour.Surface2)
 "@
 
 # --- Module Configuration --- #
@@ -254,17 +260,17 @@ function prompt {
         # --- Pre-Prompt ---
 
         # Gather values that may be updated before they are checked
-        $CurrentExitCode = $global:LASTEXITCODE
-        $CurrentExitCode ??= 0 # If $CurrentExitCode is null, set it to 0
+        $private:CurrentExitCode = $global:LASTEXITCODE
+        $private:CurrentExitCode ??= 0 # If $CurrentExitCode is null, set it to 0
 
         # --- Start Prompt ---
 
         # If the prompt is being drawn at the top of screen, omit the blank line
         if ($Host.UI.RawUI.CursorPosition.Y -eq 0) {
-            $BlankLine = '' 
+            $private:BlankLine = '' 
             Set-PSReadLineOption -ExtraPromptLineCount 1
         } else {
-            $BlankLine = "`n"
+            $private:BlankLine = "`n"
             Set-PSReadLineOption -ExtraPromptLineCount 2
         }
 
@@ -273,126 +279,132 @@ function prompt {
         # ***Debug***
         # If the $PSDebugContext variable is set, the user is in debug mode, prefix the prompt with a red "!"
         # NOTE: This seems to be flaky, sometimes it is set, sometimes it is not
-        $LeftStatus = if (Test-Path 'Variable:\PSDebugContext') {
-            "$($Flavour.Surface2.Foreground())[" + 
-            "$($Flavour.Red.Foreground())$($PSStyle.Bold)$($PromptIcons.Debug)$($PSStyle.BoldOff)" +
-            "$($Flavour.Surface2.Foreground())] "
+        $private:LeftStatus = if (Test-Path 'Variable:\PSDebugContext') {
+            "$($global:Flavour.Surface2.Foreground())[" + 
+            "$($global:Flavour.Red.Foreground())$($PSStyle.Bold)$($PromptIcons.Debug)$($PSStyle.BoldOff)" +
+            "$($global:Flavour.Surface2.Foreground())] "
         }
 
         # ***User***
         # If the user is an admin, prefix the username with a red "#",otherwise prefix with a blue "$"
         # IsAdminSession is a global variable set in the prompt setup
-        $LeftStatus += if ($IsAdminSession) { 
-            "$($Flavour.Red.Foreground())$($PromptIcons.Admin) "
+        $private:LeftStatus += if ($IsAdminSession) { 
+            "$($global:Flavour.Red.Foreground())$($PromptIcons.Admin) "
         } else {
-            "$($Flavour.Blue.Foreground())$($PromptIcons.User) "
+            "$($global:Flavour.Blue.Foreground())$($PromptIcons.User) "
         }
 
         # Username may be null, in this case derive the username from the name of the user's home folder 
         # Seems to be required when running pwsh.exe from within WSL mainly
-        $LeftStatus += if ($null -eq $env:UserName) {
-            "$($Flavour.Teal.Foreground())$($($env:Homepath | Split-Path -Leaf)) "
+        $private:LeftStatus += if ($null -eq $env:UserName) {
+            "$($global:Flavour.Teal.Foreground())$($($env:Homepath | Split-Path -Leaf)) "
         } else {
-            "$($Flavour.Teal.Foreground())$($env:UserName) "
+            "$($global:Flavour.Teal.Foreground())$($env:UserName) "
         }
 
         # ***Host***
-        $LeftStatus += "$($Flavour.Surface2.Foreground())@ $($Flavour.Green.Foreground())$($env:COMPUTERNAME) "
+        $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())@ " + 
+        "$($global:Flavour.Green.Foreground())$($env:COMPUTERNAME) "
         
         # ***Location***
-        $LeftStatus += "$($Flavour.Surface2.Foreground())in " + 
-        "$($Flavour.Yellow.Foreground())$(Get-LocationFormatted -TruncateLength 2) "
+        $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())in " + 
+        "$($global:Flavour.Yellow.Foreground())$(Get-LocationFormatted -TruncateLength 2) "
         
         # ***Git***
         # If the current directory is a git repository, display the current branch
-        if ($env:POSH_GIT_ENABLED -and ($status = Get-GitStatus -Force)) {
+        if ($env:POSH_GIT_ENABLED -and ($private:GitStatus = Get-GitStatus -Force)) {
             # Branch Name
-            $LeftStatus += "$($Flavour.Surface2.Foreground())on " +
-            "$($Flavour.Text.Foreground())git:$($Flavour.Sapphire.Foreground())$($status.Branch) "
+            $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())on " +
+            "$($global:Flavour.Text.Foreground())git:$($global:Flavour.Sapphire.Foreground())$($status.Branch) "
             
             # Status section
-            $LeftStatus += "$($Flavour.Surface2.Foreground())["
+            $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())["
             
             # Branch Status - Dirty (x) or Clean (o)
-            $LeftStatus += if ($status.HasWorking) { 
-                "$($Flavour.Red.Foreground())$($PromptIcons.Git.Dirty)" 
+            $private:LeftStatus += if ($private:GitStatus.HasWorking) { 
+                "$($global:Flavour.Red.Foreground())$($PromptIcons.Git.Dirty)" 
             } else {
-                "$($Flavour.Green.Foreground())$($PromptIcons.Git.Clean)"
+                "$($global:Flavour.Green.Foreground())$($PromptIcons.Git.Clean)"
             }
 
             # Branch Status - Ahead (↑) or Behind (↓) or Both (↕) or Same (=)
-            $LeftStatus += if ($status.AheadBy -gt 0) {
-                if ($status.BehindBy -gt 0) {
-                    " $($Flavour.Yellow.Foreground())$($PromptIcons.Git.AheadBehind)"
+            $private:LeftStatus += if ($private:GitStatus.AheadBy -gt 0) {
+                if ($private:GitStatus.BehindBy -gt 0) {
+                    " $($global:Flavour.Yellow.Foreground())$($PromptIcons.Git.AheadBehind)"
                 } else {
-                    " $($Flavour.Green.Foreground())$($PromptIcons.Git.Ahead)"
+                    " $($global:Flavour.Green.Foreground())$($PromptIcons.Git.Ahead)"
                 }
-            } elseif ($status.BehindBy -gt 0) {
-                " $($Flavour.Red.Foreground())$($PromptIcons.Git.Behind)"
+            } elseif ($private:GitStatus.BehindBy -gt 0) {
+                " $($global:Flavour.Red.Foreground())$($PromptIcons.Git.Behind)"
             } else {
-                " $($Flavour.Sapphire.Foreground())$($PromptIcons.Git.Same)"
+                " $($global:Flavour.Sapphire.Foreground())$($PromptIcons.Git.Same)"
             }
 
             # Branch Status - Has stashed changes (*)
-            $LeftStatus += if ($status.StashCount -gt 0) {
-                " $($Flavour.Sky.Foreground())$($PromptIcons.Git.Stash)"
+            $private:LeftStatus += if ($private:GitStatus.StashCount -gt 0) {
+                " $($global:Flavour.Sky.Foreground())$($PromptIcons.Git.Stash)"
             }
 
             # End of Status section
-            $LeftStatus += "$($Flavour.Surface2.Foreground())] "
+            $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())] "
         }
 
         # ***Nesting***
         # If the prompt is nested, display the nesting level
-        $LeftStatus += if ($nestedPromptLevel -gt 0) {
+        $private:LeftStatus += if ($nestedPromptLevel -gt 0) {
             # Don't display the nesting level if it is 0
-            "$($Flavour.Text.Foreground())L:$($Flavour.Yellow.Foreground())$NestedPromptLevel "
+            "$($global:Flavour.Text.Foreground())L:$($global:Flavour.Yellow.Foreground())$NestedPromptLevel "
         }
 
         # ys has a counter for the number of commands run here, but I don't see the point of it
 
         # ***Exit Code***
-        $LeftStatus += if ($CurrentExitCode -ne 0) {
+        $private:LeftStatus += if ($CurrentExitCode -ne 0) {
             # Don't display the exit code if it is 0 (Success)
-            "$($Flavour.Text.Foreground())C:$($Flavour.Red.Foreground())$CurrentExitCode "
+            "$($global:Flavour.Text.Foreground())C:$($global:Flavour.Red.Foreground())$private:CurrentExitCode "
         } elseif (-not $?) {
             # If the last command failed, but the exit code is 0, display a question mark
-            "$($Flavour.Text.Foreground())C:$($Flavour.Red.Foreground())? "
+            "$($global:Flavour.Text.Foreground())C:$($global:Flavour.Red.Foreground())? "
         }
 
         # Since the left status is complete, trim the trailing space
-        $LeftStatus = $LeftStatus.TrimEnd()
+        $private:LeftStatus = $private:LeftStatus.TrimEnd()
 
         # --- Right Status ---
 
         # ***Duration***
         # Display the duration of the last command
-        $LastCommandTime = Get-LastCommandDuration -MinimumSeconds 5
+        $private:LastCommandTime = Get-LastCommandDuration -MinimumSeconds 5
 
-        $RightStatus = if ($LastCommandTime -gt 0) {
-            "$($Flavour.Surface2.Foreground())took $($Flavour.Mauve.Foreground())$($LastCommandTime) "
+        $private:RightStatus = if ($private:LastCommandTime -gt 0) {
+            "$($global:Flavour.Surface2.Foreground())took " + 
+            "$($global:Flavour.Mauve.Foreground())$($private:LastCommandTime) "
         }
 
         # ***Timestamp*** 
-        $RightStatus += "$($Flavour.Surface2.Foreground())[" + 
-        "$($Flavour.Lavender.Foreground())$(Get-Date -Format 'HH:mm:ss')" + 
-        "$($Flavour.Surface2.Foreground())] "
+        $private:RightStatus += "$($global:Flavour.Surface2.Foreground())[" + 
+        "$($global:Flavour.Lavender.Foreground())$(Get-Date -Format 'HH:mm:ss')" + 
+        "$($global:Flavour.Surface2.Foreground())] "
 
         # Since the right status is complete, trim the trailing space
-        $RightStatus = $RightStatus.TrimEnd()
+        $private:RightStatus = $private:RightStatus.TrimEnd()
 
         # *** Padding ***
         # Pad the right side of the prompt right element so they appear on the right edge of the window
         # To determine the correct amount of padding we need to strip any ANSI escape sequences from the left and 
         # right status segments
-        $AnsiRegex = '\x1b\[[0-9;]*m'
-        $Padding = ' ' * ($Host.UI.RawUI.WindowSize.Width - (($LeftStatus -replace $AnsiRegex, '').Length + 
-            ($RightStatus -replace $AnsiRegex, '').Length))
+        $private:AnsiRegex = '\x1b\[[0-9;]*m'
+        $private:Padding = ' ' * ($Host.UI.RawUI.WindowSize.Width - 
+            (($private:LeftStatus -replace $private:AnsiRegex, '').Length + 
+            ($private:RightStatus -replace $private:AnsiRegex, '').Length))
 
         # --- End of Status Line ---
 
-        # Cache the prompt
-        $global:CurrentPrompt = $BlankLine + $LeftStatus + $Padding + $RightStatus + "`r"
+        # Combine and cache the prompt
+        $global:CurrentPrompt = $private:BlankLine + 
+            $private:LeftStatus + 
+            $private:Padding + 
+            $private:RightStatus + "`r"
     }
 
     # Write the cached prompt, will contain the recalculated prompt if it is not a redraw
@@ -404,22 +416,22 @@ function prompt {
     # ***Prompt***
     # Determine the prompt character and colour based on the vi mode
     if ($global:ViCommandMode) {
-        $PromptChar = $PromptIcons.Prompt.Command
-        $PromptColor = 'Blue'
+        $private:PromptChar = $PromptIcons.Prompt.Command
+        $private:PromptColor = 'Blue'
     } else {
-        $PromptChar = $PromptIcons.Prompt.Insert
-        $PromptColor = 'Green'
+        $private:PromptChar = $PromptIcons.Prompt.Insert
+        $private:PromptColor = 'Green'
     }
 
     # Write the prompt character 
     # Using -ForegroundColor instead of $PSStyle.Foreground because PSReadLine doesn't seem to like PSStyle
-    Write-Host -Object $PromptChar -NoNewline -ForegroundColor $PromptColor
+    Write-Host -Object $private:PromptChar -NoNewline -ForegroundColor $private:PromptColor
 
     # Tell PSReadLine what the prompt character is
-    Set-PSReadLineOption -PromptText "$PromptChar " 
+    Set-PSReadLineOption -PromptText "$private:PromptChar " 
 
     # Reset the exit code if it was updated by any of the above script
-    $global:LASTEXITCODE = $CurrentExitCode
+    $global:LASTEXITCODE = $private:CurrentExitCode
 
     # Reset the redraw flag
     $global:IsPromptRedraw = $false
@@ -466,28 +478,28 @@ $PSReadLineOptions = @{
         # Emphasis, ListPrediction and ListPredictionSelected are inspired by the Catppuccin fzf theme
         
         # Powershell colours
-        ContinuationPrompt     = $Flavour.Teal.Foreground()
-        Emphasis               = $Flavour.Red.Foreground()
-        Selection              = $Flavour.Surface0.Background()
+        ContinuationPrompt     = $global:Flavour.Teal.Foreground()
+        Emphasis               = $global:Flavour.Red.Foreground()
+        Selection              = $global:Flavour.Surface0.Background()
         
         # PSReadLine prediction colours
-        InlinePrediction       = $Flavour.Overlay0.Foreground()
-        ListPrediction         = $Flavour.Mauve.Foreground()
-        ListPredictionSelected = $Flavour.Surface0.Background()
+        InlinePrediction       = $global:Flavour.Overlay0.Foreground()
+        ListPrediction         = $global:Flavour.Mauve.Foreground()
+        ListPredictionSelected = $global:Flavour.Surface0.Background()
 
         # Syntax highlighting
-        Command                = $Flavour.Blue.Foreground()
-        Comment                = $Flavour.Overlay0.Foreground()
-        Default                = $Flavour.Text.Foreground()
-        Error                  = $Flavour.Red.Foreground()
-        Keyword                = $Flavour.Mauve.Foreground()
-        Member                 = $Flavour.Rosewater.Foreground()
-        Number                 = $Flavour.Peach.Foreground()
-        Operator               = $Flavour.Sky.Foreground()
-        Parameter              = $Flavour.Pink.Foreground() # I prefer this to the proposed Flamingo colour
-        String                 = $Flavour.Green.Foreground()
-        Type                   = $Flavour.Yellow.Foreground()
-        Variable               = $Flavour.Lavender.Foreground()
+        Command                = $global:Flavour.Blue.Foreground()
+        Comment                = $global:Flavour.Overlay0.Foreground()
+        Default                = $global:Flavour.Text.Foreground()
+        Error                  = $global:Flavour.Red.Foreground()
+        Keyword                = $global:Flavour.Mauve.Foreground()
+        Member                 = $global:Flavour.Rosewater.Foreground()
+        Number                 = $global:Flavour.Peach.Foreground()
+        Operator               = $global:Flavour.Sky.Foreground()
+        Parameter              = $global:Flavour.Pink.Foreground() # I prefer this to the proposed Flamingo colour
+        String                 = $global:Flavour.Green.Foreground()
+        Type                   = $global:Flavour.Yellow.Foreground()
+        Variable               = $global:Flavour.Lavender.Foreground()
     }
 
     # Define string used as the continuation prompt
@@ -543,13 +555,13 @@ if ($PSVersionTable.PSVersion.Major -gt 7 -or ($PSVersionTable.PSVersion.Major -
     }
 
     # Set the colours for the various formatting types
-    $PSStyle.Formatting.Debug = $Flavour.Sky.Foreground()
-    $PSStyle.Formatting.Error = $Flavour.Red.Foreground()
-    $PSStyle.Formatting.ErrorAccent = $Flavour.Blue.Foreground()
-    $PSStyle.Formatting.FormatAccent = $Flavour.Teal.Foreground()
-    $PSStyle.Formatting.TableHeader = $Flavour.Rosewater.Foreground()
-    $PSStyle.Formatting.Verbose = $Flavour.Yellow.Foreground()
-    $PSStyle.Formatting.Warning = $Flavour.Peach.Foreground()
+    $PSStyle.Formatting.Debug = $global:Flavour.Sky.Foreground()
+    $PSStyle.Formatting.Error = $global:Flavour.Red.Foreground()
+    $PSStyle.Formatting.ErrorAccent = $global:Flavour.Blue.Foreground()
+    $PSStyle.Formatting.FormatAccent = $global:Flavour.Teal.Foreground()
+    $PSStyle.Formatting.TableHeader = $global:Flavour.Rosewater.Foreground()
+    $PSStyle.Formatting.Verbose = $global:Flavour.Yellow.Foreground()
+    $PSStyle.Formatting.Warning = $global:Flavour.Peach.Foreground()
 }
 
 #############
@@ -1015,19 +1027,6 @@ Set-Alias -Name fzfe -Value Invoke-FzfES # fuzzy es
 
 # *** Bat/Hexyl ***
 Set-Alias -Name hb -Value Invoke-HexylBat # Hexyl piped into bat for paging. hb for hexyl bat
-
-<# Argument Compeleters #>
-
-# Winget Argument Completer
-Register-ArgumentCompleter -Native -CommandName winget, wg -ScriptBlock {
-    param($wordToComplete, $commandAst, $cursorPosition)
-    [Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.Utf8Encoding]::new()
-    $Local:word = $wordToComplete.Replace('"', '""')
-    $Local:ast = $commandAst.ToString().Replace('"', '""')
-    winget complete --word="$Local:word" --commandline "$Local:ast" --position $cursorPosition | ForEach-Object {
-        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
-    }
-}
 
 <# Final Setup #>
 # Steps that must be completed after the rest of the profile has been processed

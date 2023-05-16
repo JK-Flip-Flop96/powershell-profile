@@ -1,9 +1,4 @@
-# Autocompletion for powershell.
-#
-# You need to either copy the content of this file to $PROFILE or call this
-# script directly.
-#
-
+# lf Argument Completer
 using namespace System.Management.Automation
 
 Register-ArgumentCompleter -Native -CommandName 'lf' -ScriptBlock {
