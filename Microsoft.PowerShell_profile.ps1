@@ -119,7 +119,7 @@ $ViCommandMode = $false  # Default to insert mode
 
 # - Cached Values -
 # Cached version of the first two lines of the prompt, used to redraw the prompt when the vi mode is changed
-$CurrentPrompt = $null # Default to null so that a fresh prompt will always be calculated at startup
+$script:CurrentPrompt = $null # Default to null so that a fresh prompt will always be calculated at startup
 
 # Width is checked to see if the window has been resized, if it has the prompt is recalculated
 $LastHostWidth = $Host.UI.RawUI.WindowSize.Width 
@@ -261,11 +261,11 @@ function prompt {
     # Check if the window has been resized
     if ($global:LastHostWidth -ne $Host.UI.RawUI.WindowSize.Width) {
         $global:LastHostWidth = $Host.UI.RawUI.WindowSize.Width
-        $global:CurrentPrompt = $null # Force a recalculation of the prompt
+        $script:CurrentPrompt = $null # Force a recalculation of the prompt
     }
 
     # Only recalculate the prompt if it is not a redraw
-    if ((-not $global:IsPromptRedraw) -or ($null -eq $global:CurrentPrompt)) {
+    if ((-not $global:IsPromptRedraw) -or ($null -eq $script:CurrentPrompt)) {
         # --- Pre-Prompt ---
 
         # Gather values that may be updated before they are checked
@@ -313,31 +313,35 @@ function prompt {
 
         # ***Host***
         $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())@ " + 
-        "$($global:Flavour.Green.Foreground())$($env:COMPUTERNAME) "
+            "$($global:Flavour.Green.Foreground())$($env:COMPUTERNAME) "
         
-        # ***Location***
-        $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())in " + 
-        "$($global:Flavour.Yellow.Foreground())$(Get-LocationFormatted -TruncateLength 2) "
-        
+        $private:GitStatusText = ''
+        $private:GitDirectory = $null
+
         # ***Git***
-        # If the current directory is a git repository, display the current branch
+        # This section needs to be performed before the directory section as the directory section may change based 
+        # on the git status
         if ($env:POSH_GIT_ENABLED -and ($private:GitStatus = Get-GitStatus -Force)) {
+            # Git Directory
+            $private:GitDirectory = $private:GitStatus.GitDir
+
             # Branch Name
-            $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())on " +
-            "$($global:Flavour.Text.Foreground())git:$($global:Flavour.Sapphire.Foreground())$($status.Branch) "
+            $private:GitStatusText += "$($global:Flavour.Surface2.Foreground())on " +
+                "$($global:Flavour.Text.Foreground())git:" + 
+                "$($global:Flavour.Sapphire.Foreground())$($private:GitStatus.Branch) "
             
             # Status section
-            $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())["
+            $private:GitStatusText += "$($global:Flavour.Surface2.Foreground())["
             
             # Branch Status - Dirty (x) or Clean (o)
-            $private:LeftStatus += if ($private:GitStatus.HasWorking) { 
+            $private:GitStatusText += if ($private:GitStatus.HasWorking) { 
                 "$($global:Flavour.Red.Foreground())$($PromptIcons.Git.Dirty)" 
             } else {
                 "$($global:Flavour.Green.Foreground())$($PromptIcons.Git.Clean)"
             }
 
             # Branch Status - Ahead (↑) or Behind (↓) or Both (↕) or Same (=)
-            $private:LeftStatus += if ($private:GitStatus.AheadBy -gt 0) {
+            $private:GitStatusText += if ($private:GitStatus.AheadBy -gt 0) {
                 if ($private:GitStatus.BehindBy -gt 0) {
                     " $($global:Flavour.Yellow.Foreground())$($PromptIcons.Git.AheadBehind)"
                 } else {
@@ -350,13 +354,22 @@ function prompt {
             }
 
             # Branch Status - Has stashed changes (*)
-            $private:LeftStatus += if ($private:GitStatus.StashCount -gt 0) {
+            $private:GitStatusText += if ($private:GitStatus.StashCount -gt 0) {
                 " $($global:Flavour.Sky.Foreground())$($PromptIcons.Git.Stash)"
             }
 
             # End of Status section
-            $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())] "
+            $private:GitStatusText += "$($global:Flavour.Surface2.Foreground())] "
         }
+
+        # ***Location***
+        $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())in " + 
+            "$($global:Flavour.Yellow.Foreground())" + 
+            "$(Get-LocationFormatted -TruncateLength 2 -GitDir $private:GitDirectory) "
+        
+        # ***Git Status***
+        # If the current directory is a git repository, display the current branch
+        $private:LeftStatus += $private:GitStatusText
 
         # ***Nesting***
         # If the prompt is nested, display the nesting level
@@ -368,7 +381,7 @@ function prompt {
         # ys has a counter for the number of commands run here, but I don't see the point of it
 
         # ***Exit Code***
-        $private:LeftStatus += if ($CurrentExitCode -ne 0) {
+        $private:LeftStatus += if ($private:CurrentExitCode -ne 0) {
             # Don't display the exit code if it is 0 (Success)
             "$($global:Flavour.Text.Foreground())C:$($global:Flavour.Red.Foreground())$private:CurrentExitCode "
         } elseif (-not $?) {
@@ -410,14 +423,14 @@ function prompt {
         # --- End of Status Line ---
 
         # Combine and cache the prompt
-        $global:CurrentPrompt = $private:BlankLine + 
+        $script:CurrentPrompt = $private:BlankLine + 
             $private:LeftStatus + 
             $private:Padding + 
             $private:RightStatus + "`r"
     }
 
     # Write the cached prompt, will contain the recalculated prompt if it is not a redraw
-    Write-Host -Object $global:CurrentPrompt
+    Write-Host -Object $script:CurrentPrompt
 
     # --- Prompt Line ---
     # NOTE: This section is run every time the prompt is redrawn
@@ -519,7 +532,7 @@ $PSReadLineOptions = @{
 
     # Prompt Spans multiple lines, required because InvokePrompt is used in OnViModeChange to modify the prompt
     # Currently blank line -> status line -> prompt line
-    # This value is updated in OnViModeChange
+    # This value is modified in the prompt function as required
     ExtraPromptLineCount          = 1
 
     # Don't display duplicates in the history search
@@ -556,7 +569,8 @@ Set-PSReadLineOption @PSReadLineOptions
 <# PSStyle Options #>
 
 # Set the PSStyle options if PSStyle is available, i.e. if the PSVersion is 7.2 or greater
-if ($PSVersionTable.PSVersion.Major -gt 7 -or ($PSVersionTable.PSVersion.Major -eq 7 -and $PSVersionTable.PSVersion.Minor -ge 2)) {
+if ($PSVersionTable.PSVersion.Major -gt 7 -or 
+    ($PSVersionTable.PSVersion.Major -eq 7 -and $PSVersionTable.PSVersion.Minor -ge 2)) {
 
     # If the terminal supports OSC indicators, use the OSC progress bar - I only know of Windows Terminal supporting this
     if ($env:WT_SESSION) {
@@ -767,7 +781,9 @@ function Get-LastCommandDuration {
         if ($Duration.Hours -gt 0) { $DurationText += '{0:N0}h ' -f $Duration.Hours }
         if ($Duration.Minutes -gt 0) { $DurationText += '{0:N0}m ' -f $Duration.Minutes }
         if ($Duration.Seconds -gt 0) { $DurationText += '{0:N0}s ' -f $Duration.Seconds }
-        if ($IncludeMilliseconds -and $Duration.Milliseconds -gt 0) { $DurationText += '{0:N0}ms' -f $Duration.Milliseconds }
+        if ($IncludeMilliseconds -and $Duration.Milliseconds -gt 0) { 
+            $DurationText += '{0:N0}ms' -f $Duration.Milliseconds 
+        }
 
         # Return the formatted time, trimming any trailing space
         return $($DurationText.Trim())
@@ -794,7 +810,10 @@ function Get-LocationFormatted {
 
         [Parameter()]
         [ValidateRange(0, 1)] # MaxDirLengthPercent must be between 0 and 1
-        [double]$MaxDirLengthPercent = 0.30
+        [double]$MaxDirLengthPercent = 0.30,
+
+        [Parameter()]
+        [string]$GitDir = $null
     )
 
     $Location = $(Get-Location).ToString()
@@ -802,6 +821,11 @@ function Get-LocationFormatted {
     # Clean up the location string
     $Location = $Location.replace($env:HOMEDRIVE + $env:HOMEPATH, '~') 
     $Location = $Location.replace('Microsoft.PowerShell.Core\FileSystem::', '') 
+
+    # If the GitDir parameter is set, get the name of the parent folder
+    if ($GitDir) {
+        $GitDir = (Get-Item $GitDir -Force).Parent.Name # -Force to get hidden folders like .git
+    }
 
     # If the location is too long, shorten it 
     if ($Location.Length -gt ($Host.UI.RawUI.WindowSize.Width * $MaxDirLengthPercent)) {
@@ -817,6 +841,11 @@ function Get-LocationFormatted {
 
         # Add the $TruncateLength letters of each folder in the path
         for ($i = 1; $i -lt $SplitLocation.Length - 1; $i++) {
+            if ($GitDir -eq $SplitLocation[$i]) {
+                # If the folder is the .git folder's parent, add it in full and in bold
+                $Location += $PSStyle.Bold + $SplitLocation[$i] + $PSStyle.BoldOff + '\'
+                continue
+            }
             $Location += $($SplitLocation[$i][0..($TruncateLength - 1)] -join '') + '\'
         }
 
