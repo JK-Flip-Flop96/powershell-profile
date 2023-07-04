@@ -1,7 +1,7 @@
 ################
 # Profile Args #
 ################
-<# 
+<#
     The following variables are used to configure the profile for different environments
     These are to be set by the user in their profile
 #>
@@ -42,9 +42,6 @@ Import-Module "$ScoopHome\apps\gsudo\current\gsudoModule.psd1"
 # Posh-Git - Variable used to determine if Posh-Git is loaded for use in the prompt
 $env:POSH_GIT_ENABLED = [bool]$(Import-Module -Name posh-git -PassThru -ErrorAction SilentlyContinue)
 
-# Terminal-Icons
-Import-Module -Name Terminal-Icons
-
 # *** Package Manager Modules ***
 
 # Winget
@@ -53,7 +50,7 @@ Import-Module -Name Microsoft.WinGet.Client
 # Chocolatey
 Import-Module "$env:ChocolateyInstall\helpers\chocolateyInstaller.psm1"
 
-# Scoop-completion: Auto-Completion for scoop 
+# Scoop-completion: Auto-Completion for scoop
 Import-Module -Name Scoop-Completion
 
 # posh-vcpkg
@@ -63,14 +60,14 @@ Import-Module "$ScoopHome\apps\vcpkg\current\scripts\posh-vcpkg"
 
 # Written by me
 
-# NCR 
+# NCR
 Import-Module Posh-NCR
 
 # Fuzzy-Winget
 Import-Module fuzzy-winget
 
 # Catppuccin
-Import-Module Catppuccin
+Import-Module Catppuccin # NOW AVAILABLE AT CATPPUCCIN/POWERSHELL
 
 <# External Programs #>
 
@@ -79,7 +76,7 @@ try {
     # Load zoxide into the current session
     # This is a cut down version of the powershell init script from zoxide
     # I don't need Windows Powershell support in this profile
-    Invoke-Expression (& { zoxide init --hook 'pwd' powershell | Out-String } ) 
+    Invoke-Expression (& { zoxide init --hook 'pwd' powershell | Out-String } )
 
     $ZoxideLoaded = $true
 } catch {
@@ -122,9 +119,12 @@ $ViCommandMode = $false  # Default to insert mode
 $script:CurrentPrompt = $null # Default to null so that a fresh prompt will always be calculated at startup
 
 # Width is checked to see if the window has been resized, if it has the prompt is recalculated
-$LastHostWidth = $Host.UI.RawUI.WindowSize.Width 
+$LastHostWidth = $Host.UI.RawUI.WindowSize.Width
 
-# - Flags - 
+# Last History ID
+$global:LastHistoryId = -1
+
+# - Flags -
 # Set by OnViModeChange to prevent the prompt from being recalculated when the vi mode is changed
 $IsPromptRedraw = $false
 
@@ -161,7 +161,7 @@ $PromptIcons = if (-not $global:UseAscii) {
     }
 } else {
     # ASCII only icons
-    @{    
+    @{
         # Debug icon
         Debug  = '!'
 
@@ -214,7 +214,7 @@ function prompt {
     <#
     .SYNOPSIS
         Custom PowerShell prompt
-    
+
     .DESCRIPTION
         Custom PowerShell prompt. Heavily inspired by the 'ys' theme included with Oh-My-Zsh/Oh-My-Posh,
 
@@ -228,19 +228,19 @@ function prompt {
 
         Debug:
         If the current session is in debug mode, the prompt will be prefixed with "[!]" in red.
-        
+
         Prompt:
-        Instead of ys's $ prompt, I use a > for the prompt in vi insert mode and a < for the prompt in vi command 
+        Instead of ys's $ prompt, I use a > for the prompt in vi insert mode and a < for the prompt in vi command
         mode.
 
         Time:
-        I have also added an execution time to the prompt if the execution time is >= 5 seconds. This is placed at 
+        I have also added an execution time to the prompt if the execution time is >= 5 seconds. This is placed at
         the end of the prompt and is right aligned.
 
         Git Status:
         I have enhanced the git status to include more information. The git status is displayed in the following
-        format: 
-            
+        format:
+
             git:[branch] [[clean|dirty] [ahead|behind] [stash]].
 
         Where:
@@ -248,14 +248,14 @@ function prompt {
             clean/dirty - Whether the working directory is clean or dirty (o = clean, x = dirty)
             ahead/behind - Whether the current branch is ahead or behind the remote (↑ = ahead, ↓ = behind)
             stash - Whether there are stashed changes (* = stashed)
-        
+
 
         CURRENT FORMAT:
         [NewLine]
-        Left Aligned  -> [Debug] [Privilege] [User] @ [Host] in [Directory] [on [GitBranch] [GitStatus]] 
-                      -> [Nesting Level] [ExitCode] 
+        Left Aligned  -> [Debug] [Privilege] [User] @ [Host] in [Directory] [on [GitBranch] [GitStatus]]
+                      -> [Nesting Level] [ExitCode]
         Right Aligned -> [Execution Time (if >= 5s)] [Time] [NewLine]
-        [Vi Mode/Prompt] 
+        [Vi Mode/Prompt]
     #>
 
     # Check if the window has been resized
@@ -272,11 +272,29 @@ function prompt {
         $private:CurrentExitCode = $global:LASTEXITCODE
         $private:CurrentExitCode ??= 0 # If $CurrentExitCode is null, set it to 0
 
+        if ($private:CurrentExitCode -eq 0 -and $? -eq $false) {
+            $private:CurrentExitCode = 1
+        }
+
+        # Emit OSC 133 to report the return code of the last command
+        # NOTE: This is not supported by all terminals
+        $private:LastHistoryEntry = $(Get-History -Count 1)
+        if ($global:LastHistoryID -ne -1){
+            if ($LastHistoryEntry.ID -eq $global:LastHistoryID) {
+                Write-Host -NoNewline "`e]133;D`a"
+            } else {
+                Write-Host -NoNewline "`e]133;D;$($private:CurrentExitCode)`a"
+            }
+        }
+
         # --- Start Prompt ---
+
+        # Emit OSC 133 to report the beginning of the prompt
+        Write-Host -NoNewline "`e]133;A$([char]07)"
 
         # If the prompt is being drawn at the top of screen, omit the blank line
         if ($Host.UI.RawUI.CursorPosition.Y -eq 0) {
-            $private:BlankLine = '' 
+            $private:BlankLine = ''
             Set-PSReadLineOption -ExtraPromptLineCount 1
         } else {
             $private:BlankLine = "`n"
@@ -289,7 +307,7 @@ function prompt {
         # If the $PSDebugContext variable is set, the user is in debug mode, prefix the prompt with a red "!"
         # NOTE: This seems to be flaky, sometimes it is set, sometimes it is not
         $private:LeftStatus = if (Test-Path 'Variable:\PSDebugContext') {
-            "$($global:Flavour.Surface2.Foreground())[" + 
+            "$($global:Flavour.Surface2.Foreground())[" +
             "$($global:Flavour.Red.Foreground())$($PSStyle.Bold)$($PromptIcons.Debug)$($PSStyle.BoldOff)" +
             "$($global:Flavour.Surface2.Foreground())] "
         }
@@ -297,13 +315,13 @@ function prompt {
         # ***User***
         # If the user is an admin, prefix the username with a red "#",otherwise prefix with a blue "$"
         # IsAdminSession is a global variable set in the prompt setup
-        $private:LeftStatus += if ($IsAdminSession) { 
+        $private:LeftStatus += if ($IsAdminSession) {
             "$($global:Flavour.Red.Foreground())$($PromptIcons.Admin) "
         } else {
             "$($global:Flavour.Blue.Foreground())$($PromptIcons.User) "
         }
 
-        # Username may be null, in this case derive the username from the name of the user's home folder 
+        # Username may be null, in this case derive the username from the name of the user's home folder
         # Seems to be required when running pwsh.exe from within WSL mainly
         $private:LeftStatus += if ($null -eq $env:UserName) {
             "$($global:Flavour.Teal.Foreground())$($($env:Homepath | Split-Path -Leaf)) "
@@ -312,14 +330,14 @@ function prompt {
         }
 
         # ***Host***
-        $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())@ " + 
+        $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())@ " +
             "$($global:Flavour.Green.Foreground())$($env:COMPUTERNAME) "
-        
+
         $private:GitStatusText = ''
         $private:GitDirectory = $null
 
         # ***Git***
-        # This section needs to be performed before the directory section as the directory section may change based 
+        # This section needs to be performed before the directory section as the directory section may change based
         # on the git status
         if ($env:POSH_GIT_ENABLED -and ($private:GitStatus = Get-GitStatus -Force)) {
             # Git Directory
@@ -327,30 +345,33 @@ function prompt {
 
             # Branch Name
             $private:GitStatusText += "$($global:Flavour.Surface2.Foreground())on " +
-                "$($global:Flavour.Text.Foreground())git:" + 
+                "$($global:Flavour.Text.Foreground())git:" +
                 "$($global:Flavour.Sapphire.Foreground())$($private:GitStatus.Branch) "
-            
+
             # Status section
             $private:GitStatusText += "$($global:Flavour.Surface2.Foreground())["
-            
+
             # Branch Status - Dirty (x) or Clean (o)
-            $private:GitStatusText += if ($private:GitStatus.HasWorking) { 
-                "$($global:Flavour.Red.Foreground())$($PromptIcons.Git.Dirty)" 
+            $private:GitStatusText += if ($private:GitStatus.HasWorking) {
+                "$($global:Flavour.Red.Foreground())$($PromptIcons.Git.Dirty)"
             } else {
                 "$($global:Flavour.Green.Foreground())$($PromptIcons.Git.Clean)"
             }
 
-            # Branch Status - Ahead (↑) or Behind (↓) or Both (↕) or Same (=)
-            $private:GitStatusText += if ($private:GitStatus.AheadBy -gt 0) {
-                if ($private:GitStatus.BehindBy -gt 0) {
-                    " $($global:Flavour.Yellow.Foreground())$($PromptIcons.Git.AheadBehind)"
+            # Ignore the upstream status if the branch is detached
+            if ($null -ne $private:GitStatus.Upstream){
+                # Branch Status - Ahead (↑) or Behind (↓) or Both (↕) or Same (=)
+                $private:GitStatusText += if ($private:GitStatus.AheadBy -gt 0) {
+                    if ($private:GitStatus.BehindBy -gt 0) {
+                        " $($global:Flavour.Yellow.Foreground())$($PromptIcons.Git.AheadBehind)"
+                    } else {
+                        " $($global:Flavour.Green.Foreground())$($PromptIcons.Git.Ahead)"
+                    }
+                } elseif ($private:GitStatus.BehindBy -gt 0) {
+                    " $($global:Flavour.Red.Foreground())$($PromptIcons.Git.Behind)"
                 } else {
-                    " $($global:Flavour.Green.Foreground())$($PromptIcons.Git.Ahead)"
+                    " $($global:Flavour.Sapphire.Foreground())$($PromptIcons.Git.Same)"
                 }
-            } elseif ($private:GitStatus.BehindBy -gt 0) {
-                " $($global:Flavour.Red.Foreground())$($PromptIcons.Git.Behind)"
-            } else {
-                " $($global:Flavour.Sapphire.Foreground())$($PromptIcons.Git.Same)"
             }
 
             # Branch Status - Has stashed changes (*)
@@ -363,10 +384,22 @@ function prompt {
         }
 
         # ***Location***
-        $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())in " + 
-            "$($global:Flavour.Yellow.Foreground())" + 
+
+        # For WezTerm
+        # Emit OSC 7 escape sequence to set the current directory in the terminal
+        $provider_path = $(Get-Location -PSProvider FileSystem | Select-Object -ExpandProperty ProviderPath)
+        $provider_path_unix = $provider_path  -replace '\\', '/'
+        Write-Host "`e]7;file://${env:COMPUTERNAME}/$provider_path_unix`e\" -NoNewline
+
+        # For Windows Terminal
+        # Emit OSC 9;9 escape sequence to set the current directory in the terminal
+        Write-Host "`e]9;9;`"$provider_path`"$([char]07)" -NoNewline
+
+        # Print the current directory
+        $private:LeftStatus += "$($global:Flavour.Surface2.Foreground())in " +
+            "$($global:Flavour.Yellow.Foreground())" +
             "$(Get-LocationFormatted -TruncateLength 2 -GitDir $private:GitDirectory) "
-        
+
         # ***Git Status***
         # If the current directory is a git repository, display the current branch
         $private:LeftStatus += $private:GitStatusText
@@ -399,13 +432,13 @@ function prompt {
         $private:LastCommandTime = Get-LastCommandDuration -MinimumSeconds 5
 
         $private:RightStatus = if ($private:LastCommandTime -gt 0) {
-            "$($global:Flavour.Surface2.Foreground())took " + 
+            "$($global:Flavour.Surface2.Foreground())took " +
             "$($global:Flavour.Mauve.Foreground())$($private:LastCommandTime) "
         }
 
-        # ***Timestamp*** 
-        $private:RightStatus += "$($global:Flavour.Surface2.Foreground())[" + 
-        "$($global:Flavour.Lavender.Foreground())$(Get-Date -Format 'HH:mm:ss')" + 
+        # ***Timestamp***
+        $private:RightStatus += "$($global:Flavour.Surface2.Foreground())[" +
+        "$($global:Flavour.Lavender.Foreground())$(Get-Date -Format 'HH:mm:ss')" +
         "$($global:Flavour.Surface2.Foreground())] "
 
         # Since the right status is complete, trim the trailing space
@@ -413,19 +446,30 @@ function prompt {
 
         # *** Padding ***
         # Pad the right side of the prompt right element so they appear on the right edge of the window
-        # To determine the correct amount of padding we need to strip any ANSI escape sequences from the left and 
+        # To determine the correct amount of padding we need to strip any ANSI escape sequences from the left and
         # right status segments
-        $private:AnsiRegex = '\x1b\[[0-9;]*m'
-        $private:Padding = ' ' * ($Host.UI.RawUI.WindowSize.Width - 
-            (($private:LeftStatus -replace $private:AnsiRegex, '').Length + 
-            ($private:RightStatus -replace $private:AnsiRegex, '').Length))
 
+        # Should match ANSI escape sequences
+        $private:AnsiRegex = '\x1b\[[0-9;]*m'
+
+        # Calculate the length of the status line without the ANSI escape sequences
+        $private:StatusLength = ($private:LeftStatus -replace $private:AnsiRegex, '').Length +
+            ($private:RightStatus -replace $private:AnsiRegex, '').Length
+
+        if ($private:StatusLength -gt $Host.UI.RawUI.WindowSize.Width) {
+            # If the status line is longer than the window, omit the padding and right status
+            $private:Padding = ''
+            $private:RightStatus = ''
+        } else {
+            # Calculate the padding required to push the right status to the right edge of the window
+            $private:Padding = ' ' * ($Host.UI.RawUI.WindowSize.Width - $private:StatusLength)
+        }
         # --- End of Status Line ---
 
         # Combine and cache the prompt
-        $script:CurrentPrompt = $private:BlankLine + 
-            $private:LeftStatus + 
-            $private:Padding + 
+        $script:CurrentPrompt = $private:BlankLine +
+            $private:LeftStatus +
+            $private:Padding +
             $private:RightStatus + "`r"
     }
 
@@ -445,15 +489,20 @@ function prompt {
         $private:PromptColor = 'Green'
     }
 
-    # Write the prompt character 
+    # Write the prompt character
     # Using -ForegroundColor instead of $PSStyle.Foreground because PSReadLine doesn't seem to like PSStyle
     Write-Host -Object $private:PromptChar -NoNewline -ForegroundColor $private:PromptColor
 
     # Tell PSReadLine what the prompt character is
-    Set-PSReadLineOption -PromptText "$private:PromptChar " 
+    Set-PSReadLineOption -PromptText "$private:PromptChar "
+
+    # Emit OSC 133 to report the end of the prompt
+    Write-Host "`e]133;B$([char]07)" -NoNewline
 
     # Reset the exit code if it was updated by any of the above script
     $global:LASTEXITCODE = $private:CurrentExitCode
+
+    $global:LastHistoryID = $LastHistoryEntry.Id
 
     # Reset the redraw flag
     $global:IsPromptRedraw = $false
@@ -469,7 +518,7 @@ function prompt {
 # Cursor: Blinking block for command mode, blinking line for insert mode
 function OnViModeChange {
     # Suppress the warning as the global variables updated below are basically parameters for the prompt function
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', 
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '',
         Justification = 'Global variable is accessed from a different scope', Scope = 'Function')]
     param(
         [Parameter(ValueFromRemainingArguments = $true)]
@@ -480,7 +529,7 @@ function OnViModeChange {
     $global:IsPromptRedraw = $true
 
     # Set the global vi mode variable to the current mode
-    $global:ViCommandMode = $Mode -eq 'Command' 
+    $global:ViCommandMode = $Mode -eq 'Command'
 
     # Change the cursor style
     Write-Host $(if ($global:ViCommandMode) { "`e[1 q" } else { "`e[5 q" })
@@ -498,12 +547,12 @@ $PSReadLineOptions = @{
     Colors                        = @{
         # Largely based on the proposed Code Editor style guide in pr #1997 in the Catppuccin/Catppuccin repo
         # Emphasis, ListPrediction and ListPredictionSelected are inspired by the Catppuccin fzf theme
-        
+
         # Powershell colours
         ContinuationPrompt     = $global:Flavour.Teal.Foreground()
         Emphasis               = $global:Flavour.Red.Foreground()
         Selection              = $global:Flavour.Surface0.Background()
-        
+
         # PSReadLine prediction colours
         InlinePrediction       = $global:Flavour.Overlay0.Foreground()
         ListPrediction         = $global:Flavour.Mauve.Foreground()
@@ -546,7 +595,7 @@ $PSReadLineOptions = @{
 
     # Display history search results and plugin suggestions together
     PredictionSource              = 'HistoryAndPlugin'
-    
+
     # Render the predictions in a drop down list - use inline view in VSCode
     PredictionViewStyle           = if ($env:TERM_PROGRAM -eq 'vscode') { 'InlineView' } else { 'ListView' }
 
@@ -554,8 +603,8 @@ $PSReadLineOptions = @{
     PromptText                    = '> '
 
     # Run a function whenever the vi mode is changed
-    ViModeIndicator               = 'Script' 
-    
+    ViModeIndicator               = 'Script'
+
     # Define which function will be called when the vi mode is changed
     ViModeChangeHandler           = $Function:OnViModeChange
 }
@@ -569,7 +618,7 @@ Set-PSReadLineOption @PSReadLineOptions
 <# PSStyle Options #>
 
 # Set the PSStyle options if PSStyle is available, i.e. if the PSVersion is 7.2 or greater
-if ($PSVersionTable.PSVersion.Major -gt 7 -or 
+if ($PSVersionTable.PSVersion.Major -gt 7 -or
     ($PSVersionTable.PSVersion.Major -eq 7 -and $PSVersionTable.PSVersion.Minor -ge 2)) {
 
     # If the terminal supports OSC indicators, use the OSC progress bar - I only know of Windows Terminal supporting this
@@ -629,7 +678,7 @@ function Get-ChildItemUnixStyle {
         # .* is for unix hidden files - The gold standard
         # #* and $* are for the decoy files created by Carbon Black
         $Exclude += @('_*', '.*', '#*', '$*')
-    } 
+    }
 
     # If -Recurse is set and -Depth is 0 then max -Depth so -Recurse will operate properly
     if ($Recurse -and $Depth -eq 0) {
@@ -654,7 +703,7 @@ function Get-ChildItemUnixStyle {
 
 # Make ll more like unix ls -l
 function Get-ChildItemUnixStyleLong {
-    Get-ChildItemUnixStyle @args | Format-Table -AutoSize 
+    Get-ChildItemUnixStyle @args | Format-Table -AutoSize
 }
 
 # Make ls more like unix ls
@@ -671,8 +720,8 @@ function Get-ChildItemUnixStyleLongAll {
 
 # Make la more like unix ls -a
 function Get-ChildItemUnixStyleShortAll {
-    # Ensure the args don't contain -All. 
-    $filteredArgs = $args | Where-Object { $_ -notmatch '-[aA][lL]{0,2}' } 
+    # Ensure the args don't contain -All.
+    $filteredArgs = $args | Where-Object { $_ -notmatch '-[aA][lL]{0,2}' }
     Get-ChildItemUnixStyleShort @filteredArgs -All
 }
 
@@ -706,12 +755,12 @@ function Get-Tree {
         foreach ($Directory in $Directories) {
             # Get the icon from TerminalIcons - strip one of the spaces after the icon
             $IconText = ($Directory | Format-TerminalIcons) -replace '(.*?)  (.*)', '$1 $2'
-            
+
             # If the directory is the last directory and there are no files, print a closing icon
             if ($Directory -eq $Directories[-1] -and !$Files) {
                 # Print the indent string, the pointer line icon and the directory name
                 Write-Output "$IndentString└─ $IconText"
-    
+
                 # Call the function recursively to print the contents of the directory
                 Get-TreeRecursor $Directory.FullName ($IndentString + '   ') $GetFiles
             } else {
@@ -720,7 +769,7 @@ function Get-Tree {
                 Get-TreeRecursor $Directory.FullName ($IndentString + '│  ') $GetFiles
             }
         }
-        
+
         # Then files - As above
         foreach ($File in $Files) {
             $IconText = ($File | Format-TerminalIcons) -replace '(.*?)  (.*)', '$1 $2'
@@ -768,7 +817,7 @@ function Get-LastCommandDuration {
     if ($null -ne $LastCommand) {
         # Get the duration of the last command
         $Duration = $LastCommand.EndExecutionTime - $LastCommand.StartExecutionTime
-        
+
         # Don't do anything if the duration is less than the minimum seconds
         if ($Duration.TotalSeconds -lt $MinimumSeconds) { return '' }
 
@@ -781,8 +830,8 @@ function Get-LastCommandDuration {
         if ($Duration.Hours -gt 0) { $DurationText += '{0:N0}h ' -f $Duration.Hours }
         if ($Duration.Minutes -gt 0) { $DurationText += '{0:N0}m ' -f $Duration.Minutes }
         if ($Duration.Seconds -gt 0) { $DurationText += '{0:N0}s ' -f $Duration.Seconds }
-        if ($IncludeMilliseconds -and $Duration.Milliseconds -gt 0) { 
-            $DurationText += '{0:N0}ms' -f $Duration.Milliseconds 
+        if ($IncludeMilliseconds -and $Duration.Milliseconds -gt 0) {
+            $DurationText += '{0:N0}ms' -f $Duration.Milliseconds
         }
 
         # Return the formatted time, trimming any trailing space
@@ -819,15 +868,15 @@ function Get-LocationFormatted {
     $Location = $(Get-Location).ToString()
 
     # Clean up the location string
-    $Location = $Location.replace($env:HOMEDRIVE + $env:HOMEPATH, '~') 
-    $Location = $Location.replace('Microsoft.PowerShell.Core\FileSystem::', '') 
+    $Location = $Location.replace($env:HOMEDRIVE + $env:HOMEPATH, '~')
+    $Location = $Location.replace('Microsoft.PowerShell.Core\FileSystem::', '')
 
     # If the GitDir parameter is set, get the name of the parent folder
     if ($GitDir) {
         $GitDir = (Get-Item $GitDir -Force).Parent.Name # -Force to get hidden folders like .git
     }
 
-    # If the location is too long, shorten it 
+    # If the location is too long, shorten it
     if ($Location.Length -gt ($Host.UI.RawUI.WindowSize.Width * $MaxDirLengthPercent)) {
         $SplitLocation = $Location.Split('\')
 
@@ -854,7 +903,7 @@ function Get-LocationFormatted {
     } else {
         # If the path is short enough, just bold the last folder
         $Index = $Location.LastIndexOf('\')
-        $Location = $Location.Substring(0, $Index + 1) + 
+        $Location = $Location.Substring(0, $Index + 1) +
         $PSStyle.Bold + $Location.Substring($Index + 1) + $PSStyle.BoldOff
     }
 
@@ -893,8 +942,61 @@ function Invoke-FzfES {
     es $es_args | fzf --preview 'bat --style=numbers --color=always --line-range :500 {}' --prompt=' ES >'
 }
 
+function Set-LocationEverything {
+    <#
+    .SYNOPSIS
+        Set the current location to a folder selected from Everything
+
+    .NOTES
+        Requires Everything to be installed and in the PATH
+        Requires fzf to be installed and in the PATH
+        Requires the Everything service to be running
+        Requires the PSEverything module to be installed
+
+        OPTIONAL: Requires the zoxide module to be installed
+
+        CREDIT: This function is basically a copy of the same function from the PSFzf module
+    #>
+    param(
+        [Parameter()]
+        [Alias('l')]
+        [switch]$Local,
+
+        [Parameter()]
+        [Alias('d')]
+        [switch]$Directory
+    )
+    
+    try {
+        # List all dirs with Everything then pipe to fzf
+        Search-Everything -Global:$(-not $Local) -FolderInclude @('') | 
+            fzf --height=45% `
+                --layout=reverse `
+                --border=sharp `
+                --info=inline `
+                --scheme=path `
+                --keep-right `
+                --cycle `
+                --no-sort `
+                -i | New-Variable -Name Destination -PassThru -Force | Out-Null
+    } catch {
+        # Do nothing
+    }
+    # If the user selected a folder, change to it
+    if ($null -ne $Destination) {
+        
+        # If zoxide is installed, use it
+        if ($ZoxideLoaded){
+            z $Destination
+        }else{
+            Set-Location $Destination
+        }
+    }
+    # If the user didn't select a folder, do nothing
+}
+
 function Find-File ($Name) {
-    <# 
+    <#
     .SYNOPSIS
         Similar to unix find command
     #>
@@ -906,7 +1008,7 @@ function Find-File ($Name) {
 # List all updates available from WinGet
 # Filter out any packages that don't have a version number similar to how "winget upgrade" works
 function Get-WinGetUpdates {
-    Get-WinGetPackage | 
+    Get-WinGetPackage |
         Where-Object { ($_.Version -ne 'Unknown') -and $_.IsUpdateAvailable } |
         Select-Object -Property Name, Id, Version, @{ Name = 'Latest Version'; Expression = { $_.AvailableVersions[0] } }
 }
@@ -936,7 +1038,7 @@ function Invoke-Profile {
 
 # *** Window Maniuplation ***
 
-# Set the window title 
+# Set the window title
 function Set-WindowTitle {
     [CmdletBinding()]
     param(
@@ -944,7 +1046,7 @@ function Set-WindowTitle {
         [string]$Title = 'PowerShell',
 
         # If true, the new title will be prepended to the current title
-        [switch]$Prepend 
+        [switch]$Prepend
     )
     process {
         $Host.UI.RawUI.WindowTitle = $Title + $( if ($Prepend) { ' - ' + $Host.UI.RawUI.WindowTitle } )
@@ -997,6 +1099,8 @@ if ($ZoxideLoaded) {
     Set-Alias -Name cdi -Value zi -Option AllScope
     Set-Alias -Name sli -Value zi -Option AllScope
 }
+
+Set-Alias -Name cde -Value Set-LocationEverything # Like cdi but for everything
 
 # Get-ChildItem
 Set-Alias -Name ls -Value Get-ChildItemUnixStyleShort # Like ls
